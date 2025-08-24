@@ -5,7 +5,33 @@ A minimal implementation of an LLM-as-a-Judge system for evaluating language mod
 ## Quick Start
 
 ```bash
-python llm_judge_simple.py
+# Install dependencies
+pip install -r requirements.txt
+
+# Run as module
+python -m src.llm_judge "<prompt>" "<response>"
+
+# Run tests
+pytest
+```
+
+## Project Structure
+
+The project follows Domain-Driven Design (DDD) principles with clean architecture:
+
+```
+llm-as-a-judge/
+├── src/
+│   └── llm_judge/
+│       ├── domain/          # Business logic and domain models
+│       ├── application/     # Use cases and application services
+│       ├── infrastructure/  # External concerns (APIs, config, resilience)
+│       └── presentation/    # User interfaces (CLI, etc.)
+├── tests/
+│   ├── unit/               # Unit tests by layer
+│   └── integration/        # Integration tests
+├── docs/                   # Layered documentation
+└── logs/                   # Application logs (gitignored)
 ```
 
 ## Current Status

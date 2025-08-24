@@ -16,27 +16,49 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
 
-# Environment
-.env
-.env.local
-.env.*.local
+# Virtual environments
 venv/
-ENV/
 env/
+ENV/
 .venv/
+.env/
 
-# IDEs
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+
+# Logs
+logs/*.log
+logs/app/
+logs/audit/
+logs/debug/
+logs/error/
+logs/performance/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Environment files
+.env
+.env.local
+.env.*.local
 
 # OS
 .DS_Store
@@ -46,23 +68,3 @@ env/
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-# Logs
-logs/*.log
-logs/**/*.log
-*.log
-
-# Test coverage
-.coverage
-.pytest_cache/
-htmlcov/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# pyenv
-.python-version
-
-# Temporary files
-*.tmp
-*.temp
