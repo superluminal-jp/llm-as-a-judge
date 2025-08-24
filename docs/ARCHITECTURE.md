@@ -6,21 +6,42 @@ The LLM-as-a-Judge system follows a layered architecture with clear separation o
 
 ## Evolutionary Architecture Design
 
-### Current State: Minimal Implementation (Phase 1)
+### Current State: Domain-Driven Design Implementation (Phase 2)
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                llm_judge_simple.py                             │
-│                                                                 │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│  │ CandidateResponse│  │ EvaluationResult│  │ LLMJudge        │ │
-│  │ (Data Structure) │  │ (Data Structure) │  │ (Core Logic)    │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
-│                                │                               │
-│              ┌─────────────────────────────────┐               │
-│              │     Mock LLM Integration       │               │
-│              │   (Development & Testing)      │               │
-│              └─────────────────────────────────┘               │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       src/llm_judge/                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│ presentation/                    🖥️ Presentation Layer                 │
+│ ├── cli/                        │                                      │
+│ │   └── __main__.py              │ • CLI Interface                    │
+│ └── (future: web, api)          │ • User Input/Output                │
+├─────────────────────────────────────────────────────────────────────────┤
+│ application/                     🔧 Application Layer                  │
+│ ├── services/                   │                                      │
+│ │   └── llm_judge_service.py    │ • Use Case Orchestration           │
+│ └── use_cases/                  │ • Application Services              │
+│     └── (planned)               │ • Cross-cutting Concerns            │
+├─────────────────────────────────────────────────────────────────────────┤
+│ domain/                         🧠 Domain Layer                        │
+│ ├── evaluation/                 │                                      │
+│ │   └── (core logic)            │ • Business Logic                   │
+│ └── models/                     │ • Domain Models                    │
+│     └── (value objects)         │ • Domain Services                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│ infrastructure/                 🔌 Infrastructure Layer               │
+│ ├── clients/                    │                                      │
+│ │   ├── openai_client.py        │ • External API Integration         │
+│ │   ├── anthropic_client.py     │ • Data Persistence                 │
+│ │   └── http_client.py          │ • Configuration Management         │
+│ ├── config/                     │ • Reliability Patterns             │
+│ │   ├── config.py               │                                      │
+│ │   └── logging_config.py       │                                      │
+│ └── resilience/                 │                                      │
+│     ├── retry_strategies.py     │                                      │
+│     ├── fallback_manager.py     │                                      │
+│     ├── timeout_manager.py      │                                      │
+│     └── error_classification.py │                                      │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Target State: Layered Production Architecture (Phase 2-4)
@@ -76,62 +97,96 @@ The LLM-as-a-Judge system follows a layered architecture with clear separation o
 
 ### Architecture Evolution Path
 
-#### Phase 1 → Phase 2 Migration Strategy
+#### DDD Architecture Implementation Status
 ```
-Current (llm_judge_simple.py)     →     Target (Modular Architecture)
-├── Minimal single file           →     ├── llm_judge/
-│   ├── Direct scoring           →     │   ├── core/
-│   ├── Pairwise comparison      →     │   │   ├── models.py
-│   ├── Mock LLM integration     →     │   │   ├── services.py
-│   └── Basic CLI demo           →     │   │   └── evaluation.py
-                                 →     │   ├── infrastructure/
-                                 →     │   │   ├── clients/
-                                 →     │   │   ├── storage/
-                                 →     │   │   └── monitoring/
-                                 →     │   └── interfaces/
-                                 →     │       ├── cli/
-                                 →     │       └── api/
-                                 →     └── tests/
-                                 →         ├── unit/
-                                 →         ├── integration/
-                                 →         └── acceptance/
+✅ COMPLETED: Domain-Driven Structure
+├── src/llm_judge/                    # Main package with proper layering
+│   ├── domain/                       # Business logic (minimal dependencies)
+│   │   ├── evaluation/               # Core evaluation domain
+│   │   └── models/                   # Domain models and value objects
+│   ├── application/                  # Use cases and orchestration
+│   │   ├── services/
+│   │   │   └── llm_judge_service.py # ✅ Migrated from llm_judge_simple.py
+│   │   └── use_cases/               # Specific use case implementations
+│   ├── infrastructure/              # External concerns
+│   │   ├── clients/                 # ✅ Real LLM API integrations
+│   │   │   ├── openai_client.py    # ✅ OpenAI GPT-4 client
+│   │   │   ├── anthropic_client.py # ✅ Anthropic Claude client
+│   │   │   └── http_client.py      # ✅ HTTP infrastructure
+│   │   ├── config/                  # ✅ Configuration management
+│   │   │   ├── config.py           # ✅ Hierarchical config loading
+│   │   │   └── logging_config.py   # ✅ Structured logging
+│   │   └── resilience/             # ✅ Production reliability patterns
+│   │       ├── retry_strategies.py # ✅ Exponential backoff retry
+│   │       ├── fallback_manager.py # ✅ Circuit breaker & fallback
+│   │       ├── timeout_manager.py  # ✅ Request timeout handling
+│   │       └── error_classification.py # ✅ Error categorization
+│   └── presentation/                # User interfaces
+│       ├── cli/                     # ✅ Command-line interface
+│       └── (future: web, api)       # 🔄 Planned REST API
+├── tests/                           # ✅ Comprehensive test suite
+│   ├── unit/                        # ✅ Layer-separated unit tests
+│   │   ├── domain/
+│   │   ├── application/
+│   │   └── infrastructure/
+│   └── integration/                 # ✅ Cross-layer integration tests
+└── docs/                           # ✅ Layered documentation strategy
 ```
 
 #### Component Interaction Patterns
 
-**Request Processing Flow**:
+**Request Processing Flow (Current DDD Implementation)**:
 ```
-1. Request Reception (CLI/API)
+1. CLI Input (presentation/cli/__main__.py)
    ↓
-2. Configuration Validation
+2. Application Service Invocation (application/services/llm_judge_service.py)
    ↓
-3. Judge Selection & Routing
+3. Configuration Loading (infrastructure/config/config.py)
    ↓
-4. Prompt Template Assembly
+4. Provider Selection & Client Creation (infrastructure/clients/)
    ↓
-5. LLM Provider Invocation (with retry logic)
+5. Resilience Pattern Application (infrastructure/resilience/)
+   ├── Retry Logic (retry_strategies.py)
+   ├── Timeout Management (timeout_manager.py)
+   ├── Circuit Breaker (fallback_manager.py)
+   └── Error Classification (error_classification.py)
    ↓
-6. Response Processing & Validation
+6. LLM API Invocation (openai_client.py / anthropic_client.py)
    ↓
-7. Result Storage & Caching
+7. Response Processing & Domain Model Creation (domain/)
    ↓
-8. Response Formatting & Return
+8. Result Return through Application Layer
+   ↓
+9. CLI Output Formatting (presentation/cli/)
 ```
 
-**Error Handling Flow**:
+**Error Handling Flow (Current Implementation)**:
 ```
-Error Detection
+Error Detection (All Layers)
    ↓
-Error Classification (Transient/Permanent/System)
+Error Classification (infrastructure/resilience/error_classification.py)
+├── Transient Errors (Network, Rate Limits)
+├── Permanent Errors (Auth, Client Errors)
+├── Server Errors (5xx responses)
+└── Timeout Errors (Request timeouts)
    ↓
-┌─────────────┬─────────────┬─────────────┐
-│ Transient   │ Permanent   │ System      │
-│ → Retry     │ → Fail Fast│ → Fallback  │
-└─────────────┴─────────────┴─────────────┘
+┌─────────────┬─────────────┬─────────────┬─────────────┐
+│ Transient   │ Rate Limit  │ Server      │ Permanent   │
+│ → Retry     │ → Backoff   │ → Fallback  │ → Fail Fast│
+│   Logic     │   Strategy  │   Provider  │   Response  │
+└─────────────┴─────────────┴─────────────┴─────────────┘
    ↓
-Logging & Metrics Collection
+Structured Logging (infrastructure/config/logging_config.py)
+├── Error Details with Context
+├── Performance Metrics
+├── Audit Trail
+└── Debug Information
    ↓
-User Notification with Actionable Guidance
+Graceful Degradation (infrastructure/resilience/fallback_manager.py)
+├── Cached Response (if available)
+├── Simplified Response
+├── Alternative Provider
+└── User-Friendly Error Message
 ```
 
 ## Core Components
