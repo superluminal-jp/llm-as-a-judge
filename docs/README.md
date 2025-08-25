@@ -10,6 +10,7 @@ This directory contains comprehensive project documentation following a layered 
 | **[ARCHITECTURE.md](ARCHITECTURE.md)** | System | Technical architecture, design patterns, scalability | Architects, Tech Leads |
 | **[DOMAIN-MODEL.md](DOMAIN-MODEL.md)** | Domain | Business concepts, ubiquitous language, domain rules | Domain Experts, Developers |
 | **[IMPLEMENTATION.md](IMPLEMENTATION.md)** | Technical | Detailed implementation plans, acceptance criteria | Development Teams |
+| **[TESTING.md](TESTING.md)** | **NEW** | **Comprehensive testing architecture, 123 tests** | **QA Engineers, Developers** |
 | **[TASKS.md](TASKS.md)** | Operational | Current sprint breakdown, task tracking | Individual Contributors |
 
 ## 🧭 Quick Navigation

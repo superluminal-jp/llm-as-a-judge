@@ -146,25 +146,34 @@ class TestResponseCache:
         cache = ResponseCache(ttl_seconds=1)  # 1 second TTL
         
         test_response = {"score": 4.5, "reasoning": "Test response"}
-        cache_key = "test_key"
+        prompt = "test prompt"
+        context = {"type": "evaluation", "criteria": "quality"}
         
-        cache.set(cache_key, test_response)
+        cache.set(prompt, context, test_response)
         
         # Should be available immediately
-        assert cache.get(cache_key) == test_response
+        assert cache.get(prompt, context) == test_response
         
-        # Mock expiration
-        cache._cache[cache_key]["expires_at"] = datetime.utcnow() - timedelta(seconds=2)
+        # Mock time passage for expiration
+        import time
+        original_time = time.time
+        time.time = lambda: original_time() + 3600  # 1 hour later
         
-        # Should be None after expiration
-        assert cache.get(cache_key) is None
+        try:
+            # Should be None after expiration
+            assert cache.get(prompt, context) is None
+        finally:
+            time.time = original_time
     
     def test_cache_clear(self):
         """Test clearing the cache."""
         cache = ResponseCache(ttl_seconds=300)
         
-        cache.set("key1", {"data": "test1"})
-        cache.set("key2", {"data": "test2"})
+        context1 = {"type": "evaluation", "criteria": "quality"}
+        context2 = {"type": "comparison", "criteria": "accuracy"}
+        
+        cache.set("prompt1", context1, {"data": "test1"})
+        cache.set("prompt2", context2, {"data": "test2"})
         
         assert len(cache._cache) == 2
         
@@ -176,22 +185,22 @@ class TestResponseCache:
         """Test cache key generation."""
         cache = ResponseCache(ttl_seconds=300)
         
+        prompt = "Test prompt"
         context = {
             "type": "evaluation",
-            "prompt": "Test prompt",
             "response": "Test response",
             "criteria": "quality"
         }
         
-        key1 = cache._generate_cache_key(context)
-        key2 = cache._generate_cache_key(context)
+        key1 = cache._generate_key(prompt, context)
+        key2 = cache._generate_key(prompt, context)
         
         # Same context should generate same key
         assert key1 == key2
         
         # Different context should generate different key
         context["criteria"] = "accuracy"
-        key3 = cache._generate_cache_key(context)
+        key3 = cache._generate_key(prompt, context)
         assert key1 != key3
 
 

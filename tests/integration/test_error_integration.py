@@ -4,6 +4,7 @@
 import asyncio
 import os
 import sys
+import pytest
 
 # Add current directory to Python path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -12,6 +13,7 @@ from src.llm_judge.infrastructure.resilience.error_classification import get_err
 from src.llm_judge.infrastructure.config.config import load_config, setup_logging
 
 
+@pytest.mark.asyncio
 async def test_error_classification_integration():
     """Test that the error classification system works correctly."""
     print("🔧 Testing Error Classification System Integration")
@@ -92,6 +94,7 @@ async def test_error_classification_integration():
     return True
 
 
+@pytest.mark.asyncio
 async def test_retry_integration():
     """Test integration with retry system."""
     print("🔄 Testing Integration with Retry System")
@@ -121,6 +124,7 @@ async def test_retry_integration():
         return False
 
 
+@pytest.mark.asyncio
 async def test_logging_integration():
     """Test integration with logging system."""
     print("📋 Testing Integration with Logging System")
@@ -142,6 +146,7 @@ async def test_logging_integration():
         return False
 
 
+@pytest.mark.asyncio
 async def test_real_world_scenarios():
     """Test real-world error scenarios."""
     print("🌍 Testing Real-World Error Scenarios")

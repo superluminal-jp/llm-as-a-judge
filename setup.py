@@ -62,7 +62,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "llm-judge=llm_judge.__main__:main",
+            "llm-judge=llm_judge.presentation.cli:cli_entry",
         ],
     },
     project_urls={
