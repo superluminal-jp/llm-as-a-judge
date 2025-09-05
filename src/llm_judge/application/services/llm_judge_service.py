@@ -4,15 +4,22 @@ Minimal LLM-as-a-Judge Implementation
 Based on https://www.evidentlyai.com/llm-guide/llm-as-a-judge
 """
 
-from dataclasses import dataclass
-from typing import Dict, Any
+from dataclasses import dataclass, field
+from typing import Dict, Any, Optional
 import logging
 import asyncio
 
 from ...infrastructure.config.config import load_config, setup_logging
 from ...infrastructure.clients.openai_client import OpenAIClient
 from ...infrastructure.clients.anthropic_client import AnthropicClient
+from ...infrastructure.clients.multi_criteria_client import (
+    MultiCriteriaAnthropicClient, 
+    MultiCriteriaOpenAIClient, 
+    MockMultiCriteriaClient
+)
 from ...infrastructure.resilience.fallback_manager import get_fallback_manager, FallbackResponse
+from ...domain.evaluation.criteria import EvaluationCriteria, DefaultCriteria
+from ...domain.evaluation.results import MultiCriteriaResult
 
 
 @dataclass
@@ -29,6 +36,7 @@ class EvaluationResult:
     score: float
     reasoning: str
     confidence: float = 0.0
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class LLMJudge:
@@ -52,6 +60,11 @@ class LLMJudge:
         self._openai_client = None
         self._anthropic_client = None
         
+        # Initialize multi-criteria clients
+        self._multi_criteria_openai = None
+        self._multi_criteria_anthropic = None
+        self._multi_criteria_mock = None
+        
         # Initialize fallback manager
         self._fallback_manager = get_fallback_manager(self.config)
         
@@ -67,8 +80,24 @@ class LLMJudge:
         mode = "real LLM" if self._use_real_llm else "mock"
         logging.info(f"Initialized LLM Judge with provider: {self.config.default_provider}, model: {self.judge_model}, mode: {mode}")
 
-    async def evaluate_response(self, candidate: CandidateResponse, criteria: str = "overall quality") -> EvaluationResult:
+    async def evaluate_response(
+        self, 
+        candidate: CandidateResponse, 
+        criteria: str = "overall quality",
+        use_multi_criteria: bool = True
+    ) -> EvaluationResult:
         """Evaluate a single response with fallback mechanisms."""
+        # If multi-criteria is requested, use comprehensive evaluation
+        if use_multi_criteria:
+            multi_result = await self.evaluate_multi_criteria(candidate)
+            # Convert to legacy format for backward compatibility
+            return EvaluationResult(
+                score=multi_result.aggregated.overall_score,
+                reasoning=multi_result.overall_reasoning or f"Multi-criteria evaluation: {multi_result.aggregated.overall_score:.1f}/5 across {len(multi_result.criterion_scores)} criteria",
+                confidence=multi_result.aggregated.confidence
+            )
+        
+        # Legacy single-criteria evaluation
         if self._use_real_llm:
             await self._ensure_clients_initialized()
             await self._fallback_manager.initialize()
@@ -245,12 +274,93 @@ Respond in JSON: {{"winner": "A"/"B"/"tie", "reasoning": "explanation", "confide
         else:
             return {"score": 3.5, "reasoning": "Mock evaluation", "confidence": 0.8}
     
+    async def evaluate_multi_criteria(
+        self, 
+        candidate: CandidateResponse, 
+        criteria: Optional[EvaluationCriteria] = None,
+        use_default_comprehensive: bool = True
+    ) -> MultiCriteriaResult:
+        """
+        Perform comprehensive multi-criteria evaluation.
+        
+        Args:
+            candidate: The response to evaluate
+            criteria: Custom evaluation criteria (if None, uses default)
+            use_default_comprehensive: Whether to use comprehensive default criteria
+            
+        Returns:
+            MultiCriteriaResult with detailed scores across all criteria
+        """
+        # Use default criteria if none provided
+        if criteria is None:
+            if use_default_comprehensive:
+                criteria = DefaultCriteria.comprehensive()
+            else:
+                criteria = DefaultCriteria.basic()
+        
+        logging.info(f"Starting multi-criteria evaluation with {len(criteria.criteria)} criteria")
+        
+        if self._use_real_llm:
+            await self._ensure_clients_initialized()
+            
+            try:
+                # Try primary provider first
+                if self.config.default_provider == "openai" and self._multi_criteria_openai:
+                    result = await self._multi_criteria_openai.evaluate_multi_criteria(
+                        prompt=candidate.prompt,
+                        response_text=candidate.response,
+                        criteria=criteria,
+                        model=self.judge_model
+                    )
+                elif self.config.default_provider == "anthropic" and self._multi_criteria_anthropic:
+                    result = await self._multi_criteria_anthropic.evaluate_multi_criteria(
+                        prompt=candidate.prompt,
+                        response_text=candidate.response,
+                        criteria=criteria,
+                        model=self.judge_model
+                    )
+                else:
+                    # Fallback to mock
+                    result = await self._multi_criteria_mock.evaluate_multi_criteria(
+                        prompt=candidate.prompt,
+                        response_text=candidate.response,
+                        criteria=criteria,
+                        model=self.judge_model
+                    )
+                
+                logging.info(f"Multi-criteria evaluation completed: {result.aggregated.overall_score:.1f}/5 across {len(result.criterion_scores)} criteria")
+                return result
+                
+            except Exception as e:
+                logging.error(f"Multi-criteria evaluation failed with real LLM: {e}")
+                # Fallback to mock
+                return await self._multi_criteria_mock.evaluate_multi_criteria(
+                    prompt=candidate.prompt,
+                    response_text=candidate.response, 
+                    criteria=criteria,
+                    model=f"{self.judge_model}-fallback"
+                )
+        else:
+            # Use mock client
+            return await self._multi_criteria_mock.evaluate_multi_criteria(
+                prompt=candidate.prompt,
+                response_text=candidate.response,
+                criteria=criteria,
+                model=self.judge_model
+            )
+    
     async def _ensure_clients_initialized(self):
         """Initialize LLM clients if not already done."""
         if self.config.default_provider == "openai" and self._openai_client is None:
             self._openai_client = OpenAIClient(self.config)
+            self._multi_criteria_openai = MultiCriteriaOpenAIClient(self.config)
         elif self.config.default_provider == "anthropic" and self._anthropic_client is None:
             self._anthropic_client = AnthropicClient(self.config)
+            self._multi_criteria_anthropic = MultiCriteriaAnthropicClient(self.config)
+        
+        # Always initialize mock client for fallback
+        if self._multi_criteria_mock is None:
+            self._multi_criteria_mock = MockMultiCriteriaClient()
     
     async def close(self):
         """Close LLM clients and cleanup resources."""
@@ -258,6 +368,10 @@ Respond in JSON: {{"winner": "A"/"B"/"tie", "reasoning": "explanation", "confide
             await self._openai_client.close()
         if self._anthropic_client:
             await self._anthropic_client.close()
+        if self._multi_criteria_openai:
+            await self._multi_criteria_openai.close()
+        if self._multi_criteria_anthropic:
+            await self._multi_criteria_anthropic.close()
         if self._fallback_manager:
             await self._fallback_manager.cleanup()
 

@@ -10,22 +10,32 @@ This directory contains comprehensive project documentation following a layered 
 | **[ARCHITECTURE.md](ARCHITECTURE.md)** | System | Technical architecture, design patterns, scalability | Architects, Tech Leads |
 | **[DOMAIN-MODEL.md](DOMAIN-MODEL.md)** | Domain | Business concepts, ubiquitous language, domain rules | Domain Experts, Developers |
 | **[IMPLEMENTATION.md](IMPLEMENTATION.md)** | Technical | Detailed implementation plans, acceptance criteria | Development Teams |
-| **[TESTING.md](TESTING.md)** | **NEW** | **Comprehensive testing architecture, 123 tests** | **QA Engineers, Developers** |
+| **[TESTING.md](TESTING.md)** | **NEW** | **Comprehensive testing architecture, 168 tests** | **QA Engineers, Developers** |
 | **[TASKS.md](TASKS.md)** | Operational | Current sprint breakdown, task tracking | Individual Contributors |
+| **[MULTI_CRITERIA_EVALUATION.md](MULTI_CRITERIA_EVALUATION.md)** | **Feature Guide** | **Multi-criteria evaluation system guide** | **All Users** |
+| **[API_REFERENCE.md](API_REFERENCE.md)** | **API Reference** | **Complete API documentation with examples** | **Developers, Integrators** |
+| **[CONFIGURATION.md](CONFIGURATION.md)** | **Configuration** | **System configuration and environment setup** | **DevOps, Administrators** |
 
 ## 🧭 Quick Navigation
 
 ### For New Team Members
 1. Start with **[STRATEGY.md](STRATEGY.md)** - Understand the "why"
-2. Review **[DOMAIN-MODEL.md](DOMAIN-MODEL.md)** - Learn the business language
-3. Study **[ARCHITECTURE.md](ARCHITECTURE.md)** - Grasp the system design
-4. Dive into **[IMPLEMENTATION.md](IMPLEMENTATION.md)** - See how it's built
+2. Review **[MULTI_CRITERIA_EVALUATION.md](MULTI_CRITERIA_EVALUATION.md)** - Learn the core feature
+3. Study **[DOMAIN-MODEL.md](DOMAIN-MODEL.md)** - Learn the business language
+4. Check **[ARCHITECTURE.md](ARCHITECTURE.md)** - Grasp the system design
+5. Dive into **[IMPLEMENTATION.md](IMPLEMENTATION.md)** - See how it's built
 
 ### For Development Work
 1. Check **[TASKS.md](TASKS.md)** - Current priorities and status
-2. Reference **[IMPLEMENTATION.md](IMPLEMENTATION.md)** - Technical details
-3. Validate against **[DOMAIN-MODEL.md](DOMAIN-MODEL.md)** - Business correctness
-4. Update docs after changes - Keep synchronized
+2. Reference **[API_REFERENCE.md](API_REFERENCE.md)** - API usage and examples
+3. Review **[IMPLEMENTATION.md](IMPLEMENTATION.md)** - Technical details
+4. Validate against **[DOMAIN-MODEL.md](DOMAIN-MODEL.md)** - Business correctness
+5. Update docs after changes - Keep synchronized
+
+### For System Administration
+1. Review **[CONFIGURATION.md](CONFIGURATION.md)** - Complete configuration guide
+2. Check **[ARCHITECTURE.md](ARCHITECTURE.md)** - System design and deployment
+3. Reference **[TESTING.md](TESTING.md)** - Test suite and validation
 
 ### For Architecture Decisions
 1. Review **[ARCHITECTURE.md](ARCHITECTURE.md)** - Current design patterns

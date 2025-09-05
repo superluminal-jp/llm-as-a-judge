@@ -41,9 +41,18 @@ Documentation: Comprehensive docs in /docs/
 """
 
 from .application.services.llm_judge_service import LLMJudge, CandidateResponse, EvaluationResult
+from .application.services.batch_service import BatchProcessingService
 from .infrastructure.config.config import LLMConfig, load_config
+from .domain.batch import (
+    BatchRequest, BatchResult, BatchStatus, BatchEvaluationItem, 
+    BatchProgress, EvaluationType, BatchEvaluationService
+)
 
-__version__ = "0.2.0"
-__status__ = "Production Ready - Phase 2 Complete"
-__test_status__ = "123/123 tests passing (100% reliability)"
-__all__ = ["LLMJudge", "CandidateResponse", "EvaluationResult", "LLMConfig", "load_config"]
+__version__ = "0.3.0"
+__status__ = "Phase 3 - Enhanced Batch Processing"
+__test_status__ = "168/168 tests passing (100% reliability)"
+__all__ = [
+    "LLMJudge", "CandidateResponse", "EvaluationResult", "LLMConfig", "load_config",
+    "BatchProcessingService", "BatchRequest", "BatchResult", "BatchStatus", 
+    "BatchEvaluationItem", "BatchProgress", "EvaluationType", "BatchEvaluationService"
+]

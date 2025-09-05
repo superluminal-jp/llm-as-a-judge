@@ -14,6 +14,9 @@ from pathlib import Path
 
 from ...application.services.llm_judge_service import LLMJudge, CandidateResponse, EvaluationResult
 from ...infrastructure.config.config import LLMConfig, load_config
+from ...domain.evaluation.criteria import DefaultCriteria
+from .batch_commands import add_batch_commands
+from .multi_criteria_display import MultiCriteriaDisplayFormatter
 
 
 class CLIError(Exception):
@@ -65,6 +68,10 @@ Examples:
     eval_parser.add_argument('--criteria', default='overall quality',
                             help='Evaluation criteria (default: "overall quality")')
     eval_parser.add_argument('--model', help='Model that generated the response')
+    eval_parser.add_argument('--single-criterion', action='store_true',
+                            help='Use single-criterion evaluation instead of multi-criteria')
+    eval_parser.add_argument('--show-detailed', action='store_true',
+                            help='Show detailed multi-criteria breakdown')
     
     # Compare command
     compare_parser = subparsers.add_parser('compare', help='Compare two responses')
@@ -73,6 +80,9 @@ Examples:
     compare_parser.add_argument('response_b', help='Second response to compare')
     compare_parser.add_argument('--model-a', help='Model that generated response A')
     compare_parser.add_argument('--model-b', help='Model that generated response B')
+    
+    # Add batch commands
+    add_batch_commands(subparsers)
     
     return parser
 
@@ -112,18 +122,36 @@ async def evaluate_command(args: argparse.Namespace) -> Dict[str, Any]:
     judge = LLMJudge(config, judge_model=args.judge_model)
     
     try:
-        result = await judge.evaluate_response(candidate, args.criteria)
-        return {
-            'type': 'evaluation',
-            'prompt': args.prompt,
-            'response': args.response,
-            'model': args.model or "unknown",
-            'criteria': args.criteria,
-            'score': result.score,
-            'reasoning': result.reasoning,
-            'confidence': result.confidence,
-            'judge_model': judge.judge_model
-        }
+        if getattr(args, 'single_criterion', False):
+            # Use legacy single-criterion evaluation
+            result = await judge.evaluate_response(
+                candidate, 
+                args.criteria, 
+                use_multi_criteria=False
+            )
+            return {
+                'type': 'evaluation',
+                'prompt': args.prompt,
+                'response': args.response,
+                'model': args.model or "unknown",
+                'criteria': args.criteria,
+                'score': result.score,
+                'reasoning': result.reasoning,
+                'confidence': result.confidence,
+                'judge_model': judge.judge_model
+            }
+        else:
+            # Use multi-criteria evaluation (default)
+            multi_result = await judge.evaluate_multi_criteria(candidate)
+            return {
+                'type': 'multi_criteria_evaluation',
+                'prompt': args.prompt,
+                'response': args.response,
+                'model': args.model or "unknown",
+                'multi_criteria_result': multi_result,
+                'judge_model': judge.judge_model,
+                'show_detailed': getattr(args, 'show_detailed', False)
+            }
     finally:
         await judge.close()
 
@@ -230,14 +258,29 @@ async def main():
     try:
         if args.command == 'evaluate':
             result = await evaluate_command(args)
-            output = format_evaluation_output(result, args.output)
+            
+            if result['type'] == 'multi_criteria_evaluation':
+                # Use multi-criteria display formatter
+                formatter = MultiCriteriaDisplayFormatter()
+                output = formatter.format_evaluation_result(
+                    result['multi_criteria_result'], 
+                    args.output
+                )
+            else:
+                # Use legacy single-criterion formatter
+                output = format_evaluation_output(result, args.output)
+            
+            print(output)
         elif args.command == 'compare':
             result = await compare_command(args)
             output = format_comparison_output(result, args.output)
+            print(output)
+        elif args.command in ['batch', 'create-sample-batch']:
+            # Handle batch commands asynchronously
+            exit_code = await args.func(args)
+            sys.exit(exit_code)
         else:
             raise CLIError(f"Unknown command: {args.command}")
-        
-        print(output)
         
     except CLIError as e:
         print(f"Error: {e}", file=sys.stderr)

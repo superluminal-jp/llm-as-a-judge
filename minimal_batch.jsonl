@@ -1,0 +1,2 @@
+{"type": "single", "prompt": "What is AI?", "response": "AI", "model": "test-model"}
+{"type": "single", "prompt": "Define ML", "response": "Machine Learning is a subset of AI that enables computers to learn and improve from experience without being explicitly programmed for every task", "model": "test-model"}
