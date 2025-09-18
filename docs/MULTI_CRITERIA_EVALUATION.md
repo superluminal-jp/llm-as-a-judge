@@ -10,15 +10,15 @@ The LLM-as-a-Judge system provides comprehensive multi-criteria evaluation by de
 
 The system evaluates responses across these 7 criteria by default:
 
-| Criterion | Weight | Scale | Description |
-|-----------|--------|-------|-------------|
-| **Accuracy** | 20% | 1-5 | Factual correctness and truthfulness of information |
-| **Completeness** | 15% | 1-5 | Depth and comprehensiveness of coverage |
-| **Clarity** | 15% | 1-5 | Clarity of expression and ease of understanding |
-| **Relevance** | 15% | 1-5 | Direct relevance to the question asked |
-| **Helpfulness** | 15% | 1-5 | Practical value and usefulness to the reader |
-| **Coherence** | 10% | 1-5 | Logical flow and internal consistency |
-| **Appropriateness** | 10% | 1-5 | Tone, style, and contextual appropriateness |
+| Criterion           | Weight | Scale | Description                                         |
+| ------------------- | ------ | ----- | --------------------------------------------------- |
+| **Accuracy**        | 20%    | 1-5   | Factual correctness and truthfulness of information |
+| **Completeness**    | 15%    | 1-5   | Depth and comprehensiveness of coverage             |
+| **Clarity**         | 15%    | 1-5   | Clarity of expression and ease of understanding     |
+| **Relevance**       | 15%    | 1-5   | Direct relevance to the question asked              |
+| **Helpfulness**     | 15%    | 1-5   | Practical value and usefulness to the reader        |
+| **Coherence**       | 10%    | 1-5   | Logical flow and internal consistency               |
+| **Appropriateness** | 10%    | 1-5   | Tone, style, and contextual appropriateness         |
 
 ### Scoring System
 
@@ -53,33 +53,33 @@ import asyncio
 
 async def evaluate_with_multi_criteria():
     judge = LLMJudge()
-    
+
     candidate = CandidateResponse(
         prompt="Explain machine learning",
         response="Machine learning is a subset of AI that enables computers to learn from data",
         model="gpt-4"
     )
-    
+
     # Multi-criteria evaluation
     result = await judge.evaluate_multi_criteria(candidate)
-    
+
     # Overall results
     print(f"Overall Score: {result.aggregated.overall_score:.1f}/5")
     print(f"Confidence: {result.aggregated.confidence:.1%}")
     print(f"Criteria Count: {len(result.criterion_scores)}")
-    
+
     # Individual criterion scores
     for cs in result.criterion_scores:
         print(f"{cs.criterion_name}: {cs.score}/5 (weight: {cs.weight:.1%})")
         print(f"  Reasoning: {cs.reasoning}")
         print(f"  Confidence: {cs.confidence:.1%}")
-    
+
     # Qualitative feedback
     print(f"\\nOverall Assessment: {result.overall_reasoning}")
     print(f"Strengths: {', '.join(result.strengths)}")
     print(f"Areas for Improvement: {', '.join(result.weaknesses)}")
     print(f"Suggestions: {', '.join(result.suggestions)}")
-    
+
     await judge.close()
 
 asyncio.run(evaluate_with_multi_criteria())
@@ -222,8 +222,8 @@ result = await judge.evaluate_multi_criteria(candidate, criteria=basic_criteria)
 
 ```python
 from src.llm_judge.domain.evaluation.criteria import (
-    EvaluationCriteria, 
-    CriterionDefinition, 
+    EvaluationCriteria,
+    CriterionDefinition,
     CriterionType
 )
 
@@ -320,8 +320,8 @@ Batch results include comprehensive multi-criteria data for each item:
           "multi_criteria": true,
           "criteria_count": 7,
           "individual_scores": {
-            "accuracy": {"score": 4.0, "reasoning": "Factually correct"},
-            "clarity": {"score": 4.5, "reasoning": "Very clear explanation"}
+            "accuracy": { "score": 4.0, "reasoning": "Factually correct" },
+            "clarity": { "score": 4.5, "reasoning": "Very clear explanation" }
           }
         }
       }
@@ -332,16 +332,16 @@ Batch results include comprehensive multi-criteria data for each item:
 
 ## Backward Compatibility
 
-### Single-Criterion Mode
+### Basic Criteria Mode
 
-For users who prefer the original single-criterion evaluation:
+For users who prefer simpler evaluation with fewer criteria:
 
 ```bash
-# CLI single-criterion mode
-python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence" --single-criterion --criteria "accuracy"
+# Use basic criteria type for simpler evaluation
+python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence" --criteria-type basic
 
-# Programmatic single-criterion
-result = await judge.evaluate_response(candidate, "accuracy", use_multi_criteria=False)
+# Programmatic basic criteria
+result = await judge.evaluate_multi_criteria(candidate, criteria_type="basic")
 ```
 
 ### Migration from Legacy
@@ -416,11 +416,11 @@ python -m llm_judge --help
 - **Quality assessment**: Understanding specific strengths and weaknesses
 - **Research applications**: When detailed metrics are needed
 
-### When to Use Single-Criterion
+### When to Use Basic Criteria
 
 - **High-volume processing**: When speed is more important than comprehensiveness
-- **Specific focus**: When evaluating only one aspect (e.g., just factual accuracy)
-- **Legacy compatibility**: When maintaining existing evaluation workflows
+- **Simple evaluations**: When you only need basic quality assessment
+- **Resource constraints**: When you want to minimize API costs and processing time
 
 ### Optimization Tips
 

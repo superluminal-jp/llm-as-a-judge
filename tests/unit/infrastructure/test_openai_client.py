@@ -84,7 +84,7 @@ class TestChatCompletion:
             
             assert isinstance(result, OpenAIResponse)
             assert result.content == "This is a test response from GPT-4"
-            assert result.finish_reason == "stop"
+            assert result.stop_reason == "stop"
             assert result.model == "gpt-4"
             assert result.usage["completion_tokens"] == 8
             

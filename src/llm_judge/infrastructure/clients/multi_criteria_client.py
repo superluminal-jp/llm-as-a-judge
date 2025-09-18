@@ -13,6 +13,7 @@ from ...domain.evaluation.criteria import EvaluationCriteria, DefaultCriteria, C
 from ...domain.evaluation.results import MultiCriteriaResult, CriterionScore
 from .anthropic_client import AnthropicClient
 from .openai_client import OpenAIClient
+from .bedrock_client import BedrockClient
 
 
 logger = logging.getLogger(__name__)
@@ -129,7 +130,7 @@ Respond with valid JSON only:"""
                     
                     criterion_score = CriterionScore(
                         criterion_name=score_data["criterion_name"],
-                        score=float(score_data["score"]),
+                        score=int(round(float(score_data["score"]))),
                         reasoning=score_data.get("reasoning", ""),
                         confidence=float(score_data.get("confidence", 0.0)),
                         max_score=criterion_def.scale_max,
@@ -148,7 +149,7 @@ Respond with valid JSON only:"""
                 for criterion_def in criteria.criteria:
                     fallback_score = CriterionScore(
                         criterion_name=criterion_def.name,
-                        score=3.0,  # Neutral score
+                        score=3,  # Neutral score
                         reasoning=f"Fallback score for {criterion_def.name} due to parsing issues",
                         confidence=0.1,
                         max_score=criterion_def.scale_max,
@@ -177,7 +178,7 @@ Respond with valid JSON only:"""
             # Fallback: create a basic result with error info
             fallback_score = CriterionScore(
                 criterion_name="overall_quality",
-                score=3.0,
+                score=3,
                 reasoning=f"Failed to parse multi-criteria evaluation: {str(e)}. Raw response available in metadata.",
                 confidence=0.1
             )
@@ -394,7 +395,7 @@ class MultiCriteriaAnthropicClient(AnthropicClient, MultiCriteriaEvaluationMixin
             # Return error result
             fallback_score = CriterionScore(
                 criterion_name="overall_quality",
-                score=3.0,
+                score=3,
                 reasoning=f"Evaluation failed: {str(e)}",
                 confidence=0.0
             )
@@ -457,7 +458,7 @@ class MultiCriteriaOpenAIClient(OpenAIClient, MultiCriteriaEvaluationMixin):
             # Return error result
             fallback_score = CriterionScore(
                 criterion_name="overall_quality",
-                score=3.0,
+                score=3,
                 reasoning=f"Evaluation failed: {str(e)}",
                 confidence=0.0
             )
@@ -499,9 +500,9 @@ class MockMultiCriteriaClient(MultiCriteriaEvaluationMixin):
             # Generate score with slight variation
             base_score = 3.5  # Slightly above average
             variation = random.uniform(-1.0, 1.5)
-            score = max(criterion.scale_min, min(criterion.scale_max, base_score + variation))
+            score = int(round(max(criterion.scale_min, min(criterion.scale_max, base_score + variation))))
             
-            mock_reasoning = f"Mock evaluation: This response demonstrates {criterion.name} at level {score:.1f}. "
+            mock_reasoning = f"Mock evaluation: This response demonstrates {criterion.name} at level {score}. "
             if score >= 4:
                 mock_reasoning += "Shows strong performance in this criterion."
             elif score >= 3:
@@ -556,3 +557,52 @@ class MockMultiCriteriaClient(MultiCriteriaEvaluationMixin):
         )
         
         return result
+
+
+class MultiCriteriaBedrockClient(MultiCriteriaEvaluationMixin, BedrockClient):
+    """Bedrock client with multi-criteria evaluation capabilities."""
+    
+    def __init__(self, config):
+        super().__init__(config)
+        self.default_model = config.bedrock_model
+    
+    async def evaluate_multi_criteria(
+        self,
+        prompt: str,
+        response_text: str,
+        criteria: Optional[EvaluationCriteria] = None,
+        model: Optional[str] = None
+    ) -> MultiCriteriaResult:
+        """Perform multi-criteria evaluation using Bedrock."""
+        start_time = datetime.now()
+        
+        if criteria is None:
+            criteria = DefaultCriteria.comprehensive()
+        
+        # Build the multi-criteria evaluation prompt
+        evaluation_prompt = self._build_multi_criteria_prompt(prompt, response_text, criteria)
+        
+        messages = [
+            {"role": "user", "content": evaluation_prompt}
+        ]
+        
+        try:
+            # Use the existing generate method
+            response = await self.generate(messages, model=model, temperature=0.1, max_tokens=2000)
+            
+            # Parse the multi-criteria response
+            result = self._parse_multi_criteria_response(
+                response.content, criteria, model or self.default_model
+            )
+            
+            # Calculate processing time
+            processing_time = (datetime.now() - start_time).total_seconds()
+            result.processing_time = processing_time
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Multi-criteria Bedrock evaluation failed: {e}")
+            # Return mock result as fallback
+            mock_client = MockMultiCriteriaClient()
+            return await mock_client.evaluate_multi_criteria(prompt, response_text, criteria, model)

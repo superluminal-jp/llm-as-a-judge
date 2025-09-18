@@ -1,8 +1,8 @@
 # LLM-as-a-Judge Documentation
 
-This directory contains comprehensive project documentation following a layered strategy from strategic vision to implementation details.
+This directory contains comprehensive project documentation, organized by topic and audience for easy navigation and maintenance.
 
-## 📚 Documentation Structure
+## 📚 Core Documentation
 
 | Document | Level | Purpose | Audience |
 |----------|-------|---------|----------|
@@ -10,11 +10,28 @@ This directory contains comprehensive project documentation following a layered 
 | **[ARCHITECTURE.md](ARCHITECTURE.md)** | System | Technical architecture, design patterns, scalability | Architects, Tech Leads |
 | **[DOMAIN-MODEL.md](DOMAIN-MODEL.md)** | Domain | Business concepts, ubiquitous language, domain rules | Domain Experts, Developers |
 | **[IMPLEMENTATION.md](IMPLEMENTATION.md)** | Technical | Detailed implementation plans, acceptance criteria | Development Teams |
-| **[TESTING.md](TESTING.md)** | **NEW** | **Comprehensive testing architecture, 168 tests** | **QA Engineers, Developers** |
+| **[TESTING.md](TESTING.md)** | Testing Overview | Basic testing architecture and strategies | QA Engineers, Developers |
 | **[TASKS.md](TASKS.md)** | Operational | Current sprint breakdown, task tracking | Individual Contributors |
-| **[MULTI_CRITERIA_EVALUATION.md](MULTI_CRITERIA_EVALUATION.md)** | **Feature Guide** | **Multi-criteria evaluation system guide** | **All Users** |
-| **[API_REFERENCE.md](API_REFERENCE.md)** | **API Reference** | **Complete API documentation with examples** | **Developers, Integrators** |
-| **[CONFIGURATION.md](CONFIGURATION.md)** | **Configuration** | **System configuration and environment setup** | **DevOps, Administrators** |
+| **[MULTI_CRITERIA_EVALUATION.md](MULTI_CRITERIA_EVALUATION.md)** | Feature Guide | Multi-criteria evaluation system guide | All Users |
+| **[API_REFERENCE.md](API_REFERENCE.md)** | API Reference | Complete API documentation with examples | Developers, Integrators |
+| **[CONFIGURATION.md](CONFIGURATION.md)** | Configuration | System configuration and environment setup | DevOps, Administrators |
+
+## 🔧 Development Documentation
+
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| **[development/CODE_PLAN.md](development/CODE_PLAN.md)** | Development planning, roadmap, and coding standards | Development Teams |
+| **[development/BEDROCK_INTEGRATION.md](development/BEDROCK_INTEGRATION.md)** | AWS Bedrock integration implementation details | Developers, Architects |
+| **[development/CONSISTENCY_IMPROVEMENTS_SUMMARY.md](development/CONSISTENCY_IMPROVEMENTS_SUMMARY.md)** | Provider consistency improvements and refactoring | Development Teams |
+
+## 🧪 Testing Documentation
+
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| **[testing/TEST_SUITE_SUMMARY.md](testing/TEST_SUITE_SUMMARY.md)** | Complete test suite overview with 168+ tests | QA Engineers, Developers |
+| **[testing/TEST_COVERAGE_MATRIX.md](testing/TEST_COVERAGE_MATRIX.md)** | Detailed test coverage matrix and quality gates | QA Engineers, Test Managers |
+| **[testing/TEST_SCENARIOS_DETAILED.md](testing/TEST_SCENARIOS_DETAILED.md)** | Detailed test scenarios with assertions | QA Engineers, Developers |
+| **[testing/TEST_EXECUTION_GUIDE.md](testing/TEST_EXECUTION_GUIDE.md)** | Test execution procedures and troubleshooting | All Development Roles |
 
 ## 🧭 Quick Navigation
 

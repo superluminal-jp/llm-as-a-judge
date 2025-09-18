@@ -1,3 +1,0 @@
-{"type": "single", "prompt": "What is AI?", "response": "", "model": "test-model"}
-{"type": "single", "prompt": "", "response": "This is a response to empty question", "model": "test-model"}
-{"type": "comparison", "prompt": "Compare these", "response_a": "Short", "response_b": "Much longer response with more detail and context", "model_a": "model1", "model_b": "model2"}

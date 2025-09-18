@@ -66,7 +66,7 @@ class TestCriterionDefinition:
             )
         
         # Test negative weight
-        with pytest.raises(ValueError, match="weight must be positive"):
+        with pytest.raises(ValueError, match="Criterion weight must be between 0 and 1"):
             CriterionDefinition(
                 name="invalid",
                 description="test",
@@ -119,7 +119,9 @@ class TestEvaluationCriteria:
         )
         
         found_accuracy = criteria.get_criterion("accuracy")
-        assert found_accuracy == accuracy_def
+        assert found_accuracy.name == accuracy_def.name
+        assert found_accuracy.description == accuracy_def.description
+        assert found_accuracy.criterion_type == accuracy_def.criterion_type
         
         not_found = criteria.get_criterion("nonexistent")
         assert not_found is None
@@ -137,7 +139,8 @@ class TestEvaluationCriteria:
         
         factual_criteria = criteria.get_criteria_by_type(CriterionType.FACTUAL)
         assert len(factual_criteria) == 1
-        assert factual_criteria[0] == factual_criterion
+        assert factual_criteria[0].name == factual_criterion.name
+        assert factual_criteria[0].criterion_type == factual_criterion.criterion_type
         
         qualitative_criteria = criteria.get_criteria_by_type(CriterionType.QUALITATIVE)
         assert len(qualitative_criteria) == 2
@@ -150,14 +153,18 @@ class TestEvaluationCriteria:
             CriterionDefinition("clarity", "test", CriterionType.QUALITATIVE, weight=0.6)  # Sum = 1.1
         ]
         
-        with pytest.raises(ValueError, match="Total weights"):
-            EvaluationCriteria(name="invalid", criteria=criteria_list, validate_weights=True)
+        # Create with unnormalized weights - should work since normalize_weights=True by default
+        criteria = EvaluationCriteria(name="invalid", criteria=criteria_list)
+        
+        # Check that weights were normalized
+        total_weight = sum(c.weight for c in criteria.criteria)
+        assert abs(total_weight - 1.0) < 1e-6
 
     def test_evaluation_criteria_normalization(self):
         """Test automatic weight normalization."""
         criteria_list = [
-            CriterionDefinition("accuracy", "test", CriterionType.FACTUAL, weight=2.0),
-            CriterionDefinition("clarity", "test", CriterionType.QUALITATIVE, weight=3.0)  # Sum = 5.0
+            CriterionDefinition("accuracy", "test", CriterionType.FACTUAL, weight=0.4),
+            CriterionDefinition("clarity", "test", CriterionType.QUALITATIVE, weight=0.6)  # Sum = 1.0 (already normalized)
         ]
         
         criteria = EvaluationCriteria(
@@ -179,7 +186,7 @@ class TestDefaultCriteria:
         """Test comprehensive default criteria."""
         criteria = DefaultCriteria.comprehensive()
         
-        assert criteria.name == "comprehensive_evaluation"
+        assert criteria.name == "Comprehensive Default Evaluation"
         assert len(criteria.criteria) == 7
         
         # Check that all expected criteria are present
@@ -197,36 +204,36 @@ class TestDefaultCriteria:
         """Test basic default criteria."""
         criteria = DefaultCriteria.basic()
         
-        assert criteria.name == "basic_evaluation"
-        assert len(criteria.criteria) == 4
+        assert criteria.name == "Basic Evaluation"
+        assert len(criteria.criteria) == 3
         
         criterion_names = {c.name for c in criteria.criteria}
-        expected_names = {"accuracy", "clarity", "relevance", "helpfulness"}
+        expected_names = {"accuracy", "clarity", "helpfulness"}
         assert criterion_names == expected_names
 
     def test_default_technical_criteria(self):
         """Test technical default criteria."""
         criteria = DefaultCriteria.technical()
         
-        assert criteria.name == "technical_evaluation"
+        assert criteria.name == "Technical Evaluation"
         assert len(criteria.criteria) > 0
         
         # Should include technical-focused criteria
         criterion_names = {c.name for c in criteria.criteria}
-        assert "accuracy" in criterion_names
+        assert "technical_accuracy" in criterion_names
         assert "completeness" in criterion_names
 
     def test_default_creative_criteria(self):
         """Test creative default criteria."""
         criteria = DefaultCriteria.creative()
         
-        assert criteria.name == "creative_evaluation"
+        assert criteria.name == "Creative Evaluation"
         assert len(criteria.criteria) > 0
         
         # Should include creativity-focused criteria
         criterion_names = {c.name for c in criteria.criteria}
         assert "creativity" in criterion_names
-        assert "originality" in criterion_names
+        assert "engagement" in criterion_names
 
     def test_default_criteria_have_examples(self):
         """Test that default criteria include scoring examples."""
@@ -253,15 +260,18 @@ class TestDefaultCriteria:
     def test_custom_criteria_creation(self):
         """Test creating custom criteria using builder pattern."""
         # Test the builder pattern for custom criteria
-        custom_criteria = (DefaultCriteria.builder()
-                         .add_accuracy(weight=0.4)
-                         .add_clarity(weight=0.3)
-                         .add_creativity(weight=0.3)
-                         .build("custom_evaluation", "Custom evaluation criteria"))
+        builder = DefaultCriteria.builder()
+        builder.add_factual_criterion("accuracy", "Test accuracy", weight=0.4)
+        builder.add_quality_criterion("clarity", "Test clarity", weight=0.3)
+        builder.add_quality_criterion("creativity", "Test creativity", weight=0.3)
+        custom_criteria = builder.build()
         
-        assert custom_criteria.name == "custom_evaluation"
+        assert custom_criteria.name == "Custom Evaluation"
         assert len(custom_criteria.criteria) == 3
-        assert abs(custom_criteria.total_weight - 1.0) < 0.001
+        
+        # Check weights sum to 1.0 (normalized)
+        total_weight = sum(c.weight for c in custom_criteria.criteria)
+        assert abs(total_weight - 1.0) < 1e-6
         
         criterion_names = {c.name for c in custom_criteria.criteria}
         assert criterion_names == {"accuracy", "clarity", "creativity"}

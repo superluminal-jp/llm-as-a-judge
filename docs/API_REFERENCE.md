@@ -16,6 +16,7 @@ class LLMJudge:
 ```
 
 #### Parameters
+
 - `config` (Optional[LLMConfig]): Configuration object. If None, loads from environment/config files
 - `judge_model` (Optional[str]): Specific model to use as judge. Overrides config defaults
 
@@ -27,27 +28,32 @@ class LLMJudge:
 
 ```python
 async def evaluate_multi_criteria(
-    self, 
-    candidate: CandidateResponse, 
+    self,
+    candidate: CandidateResponse,
     criteria: Optional[EvaluationCriteria] = None,
-    use_default_comprehensive: bool = True
+    criteria_type: Optional[str] = None
 ) -> MultiCriteriaResult
 ```
 
 **Parameters:**
+
 - `candidate` (CandidateResponse): The response to evaluate
-- `criteria` (Optional[EvaluationCriteria]): Custom evaluation criteria. If None, uses default comprehensive criteria
-- `use_default_comprehensive` (bool): Whether to use comprehensive (7 criteria) or basic (4 criteria) default set
+- `criteria` (Optional[EvaluationCriteria]): Custom evaluation criteria. If None, uses default criteria based on criteria_type
+- `criteria_type` (Optional[str]): Type of default criteria to use ("comprehensive", "basic", "technical", "creative"). If None, uses config default
 
 **Returns:** `MultiCriteriaResult` with detailed scores across all criteria
 
 **Example:**
+
 ```python
 judge = LLMJudge()
 candidate = CandidateResponse("What is AI?", "AI is artificial intelligence", "gpt-4")
 
-# Default comprehensive evaluation
+# Default comprehensive evaluation (uses config default)
 result = await judge.evaluate_multi_criteria(candidate)
+
+# Use specific criteria type
+result = await judge.evaluate_multi_criteria(candidate, criteria_type="technical")
 print(f"Overall Score: {result.aggregated.overall_score:.1f}/5")
 print(f"Criteria Count: {len(result.criterion_scores)}")
 
@@ -62,14 +68,15 @@ Enhanced single/multi-criteria evaluation with backward compatibility
 
 ```python
 async def evaluate_response(
-    self, 
-    candidate: CandidateResponse, 
+    self,
+    candidate: CandidateResponse,
     criteria: str = "overall quality",
     use_multi_criteria: bool = True
 ) -> EvaluationResult
 ```
 
 **Parameters:**
+
 - `candidate` (CandidateResponse): The response to evaluate
 - `criteria` (str): Evaluation criteria description (used in single-criterion mode)
 - `use_multi_criteria` (bool): Whether to use multi-criteria evaluation (default: True)
@@ -77,6 +84,7 @@ async def evaluate_response(
 **Returns:** `EvaluationResult` with aggregated score and comprehensive reasoning
 
 **Example:**
+
 ```python
 # Multi-criteria evaluation (default)
 result = await judge.evaluate_response(candidate)
@@ -99,19 +107,21 @@ Compare two responses using multi-criteria analysis
 
 ```python
 async def compare_responses(
-    self, 
-    response_a: CandidateResponse, 
+    self,
+    response_a: CandidateResponse,
     response_b: CandidateResponse
 ) -> Dict[str, Any]
 ```
 
 **Parameters:**
+
 - `response_a` (CandidateResponse): First response to compare
 - `response_b` (CandidateResponse): Second response to compare
 
 **Returns:** Dictionary with comparison results
 
 **Example:**
+
 ```python
 result = await judge.compare_responses(candidate_a, candidate_b)
 print(f"Winner: {result['winner']}")  # 'A', 'B', or 'tie'
@@ -140,6 +150,7 @@ class CandidateResponse:
 ```
 
 **Parameters:**
+
 - `prompt` (str): The original question or prompt
 - `response` (str): The response text to evaluate
 - `model` (str): Model that generated the response (default: "unknown")
@@ -158,6 +169,7 @@ class EvaluationResult:
 ```
 
 **Attributes:**
+
 - `score` (float): Overall evaluation score (1-5 scale)
 - `reasoning` (str): Detailed reasoning for the score
 - `confidence` (float): Confidence level (0.0-1.0)
@@ -174,27 +186,28 @@ Comprehensive result of multi-criteria evaluation.
 class MultiCriteriaResult:
     # Individual criterion scores
     criterion_scores: List[CriterionScore] = field(default_factory=list)
-    
+
     # Aggregated results
     aggregated: Optional[AggregatedScore] = None
-    
+
     # Evaluation metadata
     criteria_used: Optional[EvaluationCriteria] = None
     evaluation_timestamp: datetime = field(default_factory=datetime.now)
     judge_model: str = "unknown"
     processing_duration: Optional[float] = None
-    
+
     # Overall assessment
     overall_reasoning: str = ""
     strengths: List[str] = field(default_factory=list)
     weaknesses: List[str] = field(default_factory=list)
     suggestions: List[str] = field(default_factory=list)
-    
+
     # Metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
 ```
 
 **Key Methods:**
+
 ```python
 def get_criterion_score(self, criterion_name: str) -> Optional[CriterionScore]
 def get_scores_by_type(self, criterion_type) -> List[CriterionScore]
@@ -213,7 +226,7 @@ class CriterionScore:
     score: float
     reasoning: str
     confidence: float = 0.0
-    
+
     # Additional metadata
     max_score: int = 5
     min_score: int = 1
@@ -222,6 +235,7 @@ class CriterionScore:
 ```
 
 **Properties:**
+
 ```python
 @property
 def normalized_score(self) -> float:
@@ -249,14 +263,14 @@ class AggregatedScore:
     overall_score: float
     weighted_score: float
     confidence: float
-    
+
     # Score statistics
     mean_score: float = 0.0
     median_score: float = 0.0
     score_std: float = 0.0
     min_score: float = 0.0
     max_score: float = 0.0
-    
+
     # Weighting information
     total_weight: float = 1.0
     criteria_count: int = 0
@@ -280,6 +294,7 @@ class EvaluationCriteria:
 ```
 
 **Methods:**
+
 ```python
 def get_criterion(self, name: str) -> Optional[CriterionDefinition]
 def get_criteria_by_type(self, criterion_type: CriterionType) -> List[CriterionDefinition]
@@ -314,25 +329,26 @@ class DefaultCriteria:
     @classmethod
     def comprehensive(cls) -> EvaluationCriteria:
         """7-dimension comprehensive evaluation."""
-        
-    @classmethod 
+
+    @classmethod
     def basic(cls) -> EvaluationCriteria:
         """4-dimension basic evaluation."""
-        
+
     @classmethod
     def technical(cls) -> EvaluationCriteria:
         """Technical content evaluation."""
-        
+
     @classmethod
     def creative(cls) -> EvaluationCriteria:
         """Creative content evaluation."""
-        
+
     @classmethod
     def builder(cls) -> 'CriteriaBuilder':
         """Builder pattern for custom criteria."""
 ```
 
 **Example:**
+
 ```python
 # Use predefined criteria sets
 comprehensive = DefaultCriteria.comprehensive()  # 7 criteria
@@ -342,7 +358,7 @@ technical = DefaultCriteria.technical()  # Technical focus
 # Custom criteria with builder
 custom = (DefaultCriteria.builder()
          .add_accuracy(weight=0.4)
-         .add_clarity(weight=0.3) 
+         .add_clarity(weight=0.3)
          .add_relevance(weight=0.3)
          .build("custom_evaluation", "Custom 3-criteria evaluation"))
 ```
@@ -354,7 +370,7 @@ Enumeration of criterion types.
 ```python
 class CriterionType(Enum):
     FACTUAL = "factual"           # Objective, verifiable accuracy
-    QUALITATIVE = "qualitative"   # Subjective quality aspects  
+    QUALITATIVE = "qualitative"   # Subjective quality aspects
     STRUCTURAL = "structural"     # Organization and formatting
     CONTEXTUAL = "contextual"     # Context appropriateness
     LINGUISTIC = "linguistic"     # Language quality
@@ -385,6 +401,7 @@ async def process_batch_from_file(
 ```
 
 **Parameters:**
+
 - `file_path`: Path to input file (JSONL, CSV, or JSON)
 - `output_path`: Optional path for output file
 - `batch_config`: Batch configuration options
@@ -393,6 +410,7 @@ async def process_batch_from_file(
 **Returns:** `BatchResult` with comprehensive statistics
 
 **Example:**
+
 ```python
 from src.llm_judge import BatchProcessingService, LLMJudge
 
@@ -406,7 +424,7 @@ def progress_callback(progress):
 # Process batch file
 result = await batch_service.process_batch_from_file(
     "evaluations.jsonl",
-    output_path="results.json", 
+    output_path="results.json",
     batch_config={
         "max_concurrent_items": 10,
         "retry_failed_items": True,
@@ -431,23 +449,24 @@ class LLMConfig:
     # API Keys
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
-    
+
     # Provider Settings
     default_provider: str = "anthropic"
     openai_model: str = "gpt-4"
     anthropic_model: str = "claude-sonnet-4-20250514"
-    
+
     # Request Settings
     request_timeout: int = 30
     connect_timeout: int = 10
     max_retries: int = 3
-    
+
     # Logging
     log_level: str = "INFO"
     enable_audit_logging: bool = False
 ```
 
 **Loading Configuration:**
+
 ```python
 from src.llm_judge.infrastructure.config.config import load_config
 
@@ -472,7 +491,7 @@ judge = LLMJudge(config=config)
 # Configuration errors
 class ConfigurationError(Exception): pass
 
-# LLM client errors  
+# LLM client errors
 class LLMClientError(Exception): pass
 
 # Evaluation errors
@@ -503,24 +522,24 @@ from src.llm_judge import LLMJudge, CandidateResponse
 
 async def basic_evaluation():
     judge = LLMJudge()
-    
+
     candidate = CandidateResponse(
         prompt="What is machine learning?",
         response="Machine learning is a subset of AI that enables computers to learn from data",
         model="gpt-4"
     )
-    
+
     # Multi-criteria evaluation
     result = await judge.evaluate_multi_criteria(candidate)
-    
+
     print(f"Overall Score: {result.aggregated.overall_score:.1f}/5")
     print(f"Number of criteria: {len(result.criterion_scores)}")
-    
+
     # Show top and bottom scoring criteria
     sorted_scores = sorted(result.criterion_scores, key=lambda x: x.score, reverse=True)
     print(f"Highest: {sorted_scores[0].criterion_name} ({sorted_scores[0].score}/5)")
     print(f"Lowest: {sorted_scores[-1].criterion_name} ({sorted_scores[-1].score}/5)")
-    
+
     await judge.close()
 
 asyncio.run(basic_evaluation())
@@ -533,11 +552,11 @@ from src.llm_judge.domain.evaluation.criteria import EvaluationCriteria, Criteri
 
 async def custom_criteria_evaluation():
     judge = LLMJudge()
-    
+
     # Define custom criteria for code review
     code_review_criteria = EvaluationCriteria(
         name="code_review",
-        description="Code review evaluation criteria", 
+        description="Code review evaluation criteria",
         criteria=[
             CriterionDefinition(
                 name="correctness",
@@ -546,7 +565,7 @@ async def custom_criteria_evaluation():
                 weight=0.4
             ),
             CriterionDefinition(
-                name="readability", 
+                name="readability",
                 description="Code readability and style",
                 criterion_type=CriterionType.QUALITATIVE,
                 weight=0.3
@@ -554,24 +573,24 @@ async def custom_criteria_evaluation():
             CriterionDefinition(
                 name="efficiency",
                 description="Performance and efficiency",
-                criterion_type=CriterionType.STRUCTURAL, 
+                criterion_type=CriterionType.STRUCTURAL,
                 weight=0.3
             )
         ]
     )
-    
+
     candidate = CandidateResponse(
         prompt="Write a function to sort a list",
         response="def sort_list(lst): return sorted(lst)",
         model="code-assistant"
     )
-    
+
     result = await judge.evaluate_multi_criteria(candidate, criteria=code_review_criteria)
-    
+
     print(f"Code Review Score: {result.aggregated.overall_score:.1f}/5")
     for cs in result.criterion_scores:
         print(f"{cs.criterion_name}: {cs.score}/5 (weight: {cs.weight:.1%})")
-    
+
     await judge.close()
 
 asyncio.run(custom_criteria_evaluation())
@@ -585,14 +604,14 @@ from src.llm_judge import BatchProcessingService, LLMJudge
 async def batch_with_progress():
     judge = LLMJudge()
     batch_service = BatchProcessingService(judge, max_workers=5)
-    
+
     # Progress tracking
     def progress_callback(progress):
         completed = progress.completed_items + progress.failed_items
         percentage = (completed / progress.total_items) * 100
         print(f"Progress: {percentage:.1f}% ({completed}/{progress.total_items})")
         print(f"Success: {progress.completed_items}, Failed: {progress.failed_items}")
-    
+
     result = await batch_service.process_batch_from_file(
         "large_evaluation_set.jsonl",
         output_path="detailed_results.json",
@@ -604,12 +623,12 @@ async def batch_with_progress():
         },
         progress_callback=progress_callback
     )
-    
+
     print(f"\\nBatch completed:")
     print(f"Success rate: {result.success_rate:.1%}")
     print(f"Total time: {result.processing_duration:.1f}s")
     print(f"Average time per item: {result.average_processing_time:.2f}s")
-    
+
     await judge.close()
 
 asyncio.run(batch_with_progress())
@@ -644,8 +663,8 @@ For scenarios where you need the original single-criterion behavior:
 ```python
 # Explicit single-criterion mode
 result = await judge.evaluate_response(
-    candidate, 
-    "accuracy and completeness", 
+    candidate,
+    "accuracy and completeness",
     use_multi_criteria=False
 )
 # This bypasses multi-criteria evaluation
@@ -656,7 +675,12 @@ result = await judge.evaluate_response(
 Existing batch files work unchanged but now produce multi-criteria results:
 
 ```jsonl
-{"type": "single", "prompt": "What is AI?", "response": "AI is artificial intelligence", "model": "gpt-4"}
+{
+  "type": "single",
+  "prompt": "What is AI?",
+  "response": "AI is artificial intelligence",
+  "model": "gpt-4"
+}
 ```
 
 The output format is enhanced but backward compatible:
@@ -671,10 +695,73 @@ The output format is enhanced but backward compatible:
       "multi_criteria": true,
       "criteria_count": 7,
       "individual_scores": {
-        "accuracy": {"score": 4.0, "reasoning": "Factually correct"},
-        "clarity": {"score": 4.5, "reasoning": "Very clear"}
+        "accuracy": { "score": 4.0, "reasoning": "Factually correct" },
+        "clarity": { "score": 4.5, "reasoning": "Very clear" }
       }
     }
   }
 }
+```
+
+## CLI Reference
+
+### Command Line Interface
+
+The LLM-as-a-Judge system provides a command-line interface for easy evaluation and comparison.
+
+#### Basic Usage
+
+```bash
+# Evaluate a single response (uses comprehensive criteria by default)
+python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence"
+
+# Use specific criteria type
+python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence" --criteria-type basic
+
+# Use technical criteria for technical content
+python -m llm_judge evaluate "Explain ML" "Machine learning is..." --criteria-type technical
+
+# Compare two responses
+python -m llm_judge compare "Explain ML" "Basic explanation" "Detailed explanation"
+
+# Output as JSON
+python -m llm_judge evaluate "Question" "Answer" --output json
+```
+
+#### CLI Options
+
+**Global Options:**
+
+- `--provider {openai,anthropic,bedrock}`: LLM provider to use as judge
+- `--judge-model MODEL`: Specific model to use as judge
+- `--config PATH`: Path to configuration file
+- `--output {text,json}`: Output format (default: text)
+- `--verbose, -v`: Enable verbose output
+
+**Evaluate Command Options:**
+
+- `--criteria CRITERIA`: Evaluation criteria (default: "overall quality")
+- `--model MODEL`: Model that generated the response
+- `--criteria-type {comprehensive,basic,technical,creative}`: Type of default criteria to use
+- `--show-detailed`: Show detailed multi-criteria breakdown
+
+**Compare Command Options:**
+
+- `--model-a MODEL`: Model that generated response A
+- `--model-b MODEL`: Model that generated response B
+
+#### Environment Variables
+
+Set these in your `.env` file or environment:
+
+```bash
+# Default criteria type
+DEFAULT_CRITERIA_TYPE=comprehensive
+
+# LLM Provider API Keys
+OPENAI_API_KEY=sk-your-openai-api-key-here
+ANTHROPIC_API_KEY=sk-ant-your-anthropic-key-here
+
+# Default Provider
+DEFAULT_PROVIDER=anthropic
 ```

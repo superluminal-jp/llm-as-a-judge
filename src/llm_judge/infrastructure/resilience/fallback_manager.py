@@ -323,7 +323,7 @@ class FallbackManager:
         self.current_mode = ServiceMode.FULL
         
         # Fallback configuration
-        self.provider_priority = ["anthropic", "openai"]  # Preferred order
+        self.provider_priority = ["anthropic", "openai", "bedrock"]  # Preferred order
         self.enable_caching = True
         self.enable_simplified_responses = True
         
@@ -337,6 +337,9 @@ class FallbackManager:
         
         if hasattr(self.config, 'openai_api_key') and self.config.openai_api_key:
             self.health_monitor.initialize_provider("openai")
+        
+        if hasattr(self.config, 'aws_access_key_id') and self.config.aws_access_key_id:
+            self.health_monitor.initialize_provider("bedrock")
         
         # Start health monitoring
         await self.health_monitor.start_monitoring()

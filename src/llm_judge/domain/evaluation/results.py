@@ -17,7 +17,7 @@ class CriterionScore:
     """Score for a single evaluation criterion."""
     
     criterion_name: str
-    score: float
+    score: int
     reasoning: str
     confidence: float = 0.0
     
@@ -39,12 +39,12 @@ class CriterionScore:
     @property
     def normalized_score(self) -> float:
         """Normalize score to 0-1 range."""
-        return (self.score - self.min_score) / (self.max_score - self.min_score)
+        return float(self.score - self.min_score) / float(self.max_score - self.min_score)
     
     @property
     def weighted_score(self) -> float:
         """Get the weighted score."""
-        return self.score * self.weight
+        return float(self.score) * self.weight
     
     @property
     def percentage_score(self) -> float:
@@ -64,8 +64,8 @@ class AggregatedScore:
     mean_score: float = 0.0
     median_score: float = 0.0
     score_std: float = 0.0
-    min_score: float = 0.0
-    max_score: float = 0.0
+    min_score: int = 0
+    max_score: int = 0
     
     # Weighting information
     total_weight: float = 1.0
@@ -77,6 +77,10 @@ class AggregatedScore:
             raise ValueError("Overall score must be between 1 and 5")
         if not 0 <= self.confidence <= 1:
             raise ValueError("Confidence must be between 0 and 1")
+        if not 1 <= self.min_score <= 5:
+            raise ValueError("Min score must be between 1 and 5")
+        if not 1 <= self.max_score <= 5:
+            raise ValueError("Max score must be between 1 and 5")
 
 
 @dataclass
@@ -114,7 +118,7 @@ class MultiCriteriaResult:
         if not self.criterion_scores:
             raise ValueError("Cannot calculate aggregated score without criterion scores")
         
-        scores = [cs.score for cs in self.criterion_scores]
+        scores = [float(cs.score) for cs in self.criterion_scores]
         weights = [cs.weight for cs in self.criterion_scores]
         confidences = [cs.confidence for cs in self.criterion_scores]
         
@@ -131,8 +135,8 @@ class MultiCriteriaResult:
         mean_score = statistics.mean(scores)
         median_score = statistics.median(scores)
         score_std = statistics.stdev(scores) if len(scores) > 1 else 0.0
-        min_score = min(scores)
-        max_score = max(scores)
+        min_score = int(min(scores))
+        max_score = int(max(scores))
         
         # Calculate overall confidence (weighted average)
         if confidences and total_weight > 0:
@@ -166,7 +170,7 @@ class MultiCriteriaResult:
         self.criterion_scores.append(criterion_score)
         self.aggregated = self._calculate_aggregated_score()
     
-    def update_criterion_score(self, criterion_name: str, score: float, reasoning: str, confidence: float = 0.0):
+    def update_criterion_score(self, criterion_name: str, score: int, reasoning: str, confidence: float = 0.0):
         """Update an existing criterion score."""
         criterion_score = self.get_criterion_score(criterion_name)
         if not criterion_score:

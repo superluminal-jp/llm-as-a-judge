@@ -21,7 +21,7 @@ class CriterionType(Enum):
     ETHICAL = "ethical"          # Safety, bias, appropriateness
 
 
-@dataclass
+@dataclass(frozen=True)
 class CriterionDefinition:
     """Definition of a single evaluation criterion."""
     
@@ -74,9 +74,29 @@ class EvaluationCriteria:
     def _normalize_weights(self):
         """Normalize weights to sum to 1.0."""
         total_weight = sum(c.weight for c in self.criteria)
-        if total_weight > 0:
+        if total_weight > 0 and abs(total_weight - 1.0) > 1e-6:
+            # Create new criterion definitions with normalized weights
+            normalized_criteria = []
             for criterion in self.criteria:
-                criterion.weight = criterion.weight / total_weight
+                normalized_weight = criterion.weight / total_weight
+                # Create a new instance with normalized weight using object.__setattr__ for frozen dataclass
+                new_criterion = CriterionDefinition(
+                    name=criterion.name,
+                    description=criterion.description,
+                    criterion_type=criterion.criterion_type,
+                    weight=normalized_weight,
+                    scale_min=criterion.scale_min,
+                    scale_max=criterion.scale_max,
+                    evaluation_prompt=criterion.evaluation_prompt,
+                    examples=criterion.examples,
+                    domain_specific=criterion.domain_specific,
+                    requires_context=criterion.requires_context,
+                    metadata=criterion.metadata
+                )
+                normalized_criteria.append(new_criterion)
+            
+            # Replace criteria with normalized versions
+            object.__setattr__(self, 'criteria', normalized_criteria)
     
     def get_criterion(self, name: str) -> Optional[CriterionDefinition]:
         """Get criterion by name."""
@@ -355,6 +375,11 @@ class DefaultCriteria:
             name="Creative Evaluation", 
             description="Evaluation framework for creative and artistic content"
         )
+    
+    @staticmethod
+    def builder() -> 'CriteriaBuilder':
+        """Create a builder for custom criteria."""
+        return CriteriaBuilder()
 
 
 class CriteriaBuilder:

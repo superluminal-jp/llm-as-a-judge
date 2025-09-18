@@ -35,9 +35,18 @@ LOG_LEVEL=INFO
 ENABLE_AUDIT_LOGGING=true
 
 # Multi-Criteria Configuration
-DEFAULT_MULTI_CRITERIA=true
+DEFAULT_CRITERIA_TYPE=comprehensive
 MULTI_CRITERIA_TIMEOUT=60
 ```
+
+### Criteria Type Options
+
+The `DEFAULT_CRITERIA_TYPE` environment variable controls which default evaluation criteria set to use:
+
+- **`comprehensive`** (default): 7-criteria evaluation covering accuracy, completeness, clarity, relevance, helpfulness, coherence, and appropriateness
+- **`basic`**: 3-criteria evaluation focusing on accuracy, clarity, and helpfulness
+- **`technical`**: 5-criteria evaluation optimized for technical content (technical accuracy, implementation feasibility, best practices, completeness, clarity)
+- **`creative`**: 5-criteria evaluation for creative content (creativity, engagement, coherence, relevance, style)
 
 ### 2. Configuration File (JSON/YAML)
 
@@ -53,7 +62,7 @@ Create `config.json`:
       "temperature": 0.1
     },
     "anthropic": {
-      "api_key": "sk-ant-your-anthropic-key", 
+      "api_key": "sk-ant-your-anthropic-key",
       "model": "claude-sonnet-4-20250514",
       "max_tokens": 4000,
       "temperature": 0.1
@@ -70,7 +79,7 @@ Create `config.json`:
     "enabled_by_default": true,
     "timeout": 60,
     "fallback_on_error": true,
-    "default_criteria_set": "comprehensive"
+    "default_criteria_type": "comprehensive"
   },
   "batch_processing": {
     "max_concurrent": 10,
@@ -105,16 +114,16 @@ config = LLMConfig(
     default_provider="anthropic",
     openai_model="gpt-4",
     anthropic_model="claude-sonnet-4-20250514",
-    
+
     # Request Settings
     request_timeout=30,
     connect_timeout=10,
     max_retries=3,
-    
+
     # Multi-Criteria Settings
     enable_multi_criteria_by_default=True,
     multi_criteria_timeout=60,
-    
+
     # Logging
     log_level="INFO",
     enable_audit_logging=True
@@ -129,83 +138,83 @@ judge = LLMJudge(config=config)
 
 #### OpenAI Settings
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `openai_api_key` | str | None | OpenAI API key |
-| `openai_model` | str | "gpt-4" | OpenAI model to use |
-| `openai_max_tokens` | int | 4000 | Maximum tokens per request |
-| `openai_temperature` | float | 0.1 | Temperature for response generation |
-| `openai_base_url` | str | None | Custom OpenAI API base URL |
+| Parameter            | Type  | Default | Description                         |
+| -------------------- | ----- | ------- | ----------------------------------- |
+| `openai_api_key`     | str   | None    | OpenAI API key                      |
+| `openai_model`       | str   | "gpt-4" | OpenAI model to use                 |
+| `openai_max_tokens`  | int   | 4000    | Maximum tokens per request          |
+| `openai_temperature` | float | 0.1     | Temperature for response generation |
+| `openai_base_url`    | str   | None    | Custom OpenAI API base URL          |
 
 #### Anthropic Settings
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `anthropic_api_key` | str | None | Anthropic API key |
-| `anthropic_model` | str | "claude-sonnet-4-20250514" | Anthropic model to use |
-| `anthropic_max_tokens` | int | 4000 | Maximum tokens per request |
-| `anthropic_temperature` | float | 0.1 | Temperature for response generation |
+| Parameter               | Type  | Default                    | Description                         |
+| ----------------------- | ----- | -------------------------- | ----------------------------------- |
+| `anthropic_api_key`     | str   | None                       | Anthropic API key                   |
+| `anthropic_model`       | str   | "claude-sonnet-4-20250514" | Anthropic model to use              |
+| `anthropic_max_tokens`  | int   | 4000                       | Maximum tokens per request          |
+| `anthropic_temperature` | float | 0.1                        | Temperature for response generation |
 
 #### Provider Selection
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `default_provider` | str | "anthropic" | Primary LLM provider ("openai" or "anthropic") |
-| `fallback_provider` | str | None | Fallback provider if primary fails |
-| `enable_fallback` | bool | True | Enable automatic fallback between providers |
+| Parameter           | Type | Default     | Description                                    |
+| ------------------- | ---- | ----------- | ---------------------------------------------- |
+| `default_provider`  | str  | "anthropic" | Primary LLM provider ("openai" or "anthropic") |
+| `fallback_provider` | str  | None        | Fallback provider if primary fails             |
+| `enable_fallback`   | bool | True        | Enable automatic fallback between providers    |
 
 ### Multi-Criteria Evaluation Settings
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `enable_multi_criteria_by_default` | bool | True | Use multi-criteria evaluation by default |
-| `default_criteria_set` | str | "comprehensive" | Default criteria set ("comprehensive", "basic", "technical", "creative") |
-| `multi_criteria_timeout` | int | 60 | Timeout for multi-criteria evaluation (seconds) |
-| `fallback_on_parsing_error` | bool | True | Fallback to mock evaluation on JSON parsing errors |
-| `validate_criteria_responses` | bool | True | Validate LLM responses against expected criteria |
-| `criteria_weights_validation` | bool | False | Validate that criteria weights sum to 1.0 |
+| Parameter                          | Type | Default         | Description                                                              |
+| ---------------------------------- | ---- | --------------- | ------------------------------------------------------------------------ |
+| `enable_multi_criteria_by_default` | bool | True            | Use multi-criteria evaluation by default                                 |
+| `default_criteria_set`             | str  | "comprehensive" | Default criteria set ("comprehensive", "basic", "technical", "creative") |
+| `multi_criteria_timeout`           | int  | 60              | Timeout for multi-criteria evaluation (seconds)                          |
+| `fallback_on_parsing_error`        | bool | True            | Fallback to mock evaluation on JSON parsing errors                       |
+| `validate_criteria_responses`      | bool | True            | Validate LLM responses against expected criteria                         |
+| `criteria_weights_validation`      | bool | False           | Validate that criteria weights sum to 1.0                                |
 
 ### Request and Timeout Settings
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `request_timeout` | int | 30 | HTTP request timeout (seconds) |
-| `connect_timeout` | int | 10 | Connection timeout (seconds) |
-| `read_timeout` | int | 30 | Response read timeout (seconds) |
-| `max_retries` | int | 3 | Maximum retry attempts |
-| `retry_backoff_factor` | float | 2.0 | Exponential backoff factor |
-| `retry_max_wait` | float | 60.0 | Maximum wait time between retries |
+| Parameter              | Type  | Default | Description                       |
+| ---------------------- | ----- | ------- | --------------------------------- |
+| `request_timeout`      | int   | 30      | HTTP request timeout (seconds)    |
+| `connect_timeout`      | int   | 10      | Connection timeout (seconds)      |
+| `read_timeout`         | int   | 30      | Response read timeout (seconds)   |
+| `max_retries`          | int   | 3       | Maximum retry attempts            |
+| `retry_backoff_factor` | float | 2.0     | Exponential backoff factor        |
+| `retry_max_wait`       | float | 60.0    | Maximum wait time between retries |
 
 ### Batch Processing Configuration
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `max_concurrent_items` | int | 10 | Maximum concurrent evaluations |
-| `batch_timeout` | int | 3600 | Overall batch timeout (seconds) |
-| `retry_failed_items` | bool | True | Retry failed batch items |
-| `max_retries_per_item` | int | 3 | Maximum retries per batch item |
-| `continue_on_error` | bool | True | Continue processing if individual items fail |
-| `progress_update_interval` | int | 5 | Progress update frequency (items) |
+| Parameter                  | Type | Default | Description                                  |
+| -------------------------- | ---- | ------- | -------------------------------------------- |
+| `max_concurrent_items`     | int  | 10      | Maximum concurrent evaluations               |
+| `batch_timeout`            | int  | 3600    | Overall batch timeout (seconds)              |
+| `retry_failed_items`       | bool | True    | Retry failed batch items                     |
+| `max_retries_per_item`     | int  | 3       | Maximum retries per batch item               |
+| `continue_on_error`        | bool | True    | Continue processing if individual items fail |
+| `progress_update_interval` | int  | 5       | Progress update frequency (items)            |
 
 ### Logging Configuration
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `log_level` | str | "INFO" | Logging level (DEBUG, INFO, WARNING, ERROR) |
-| `enable_audit_logging` | bool | False | Enable audit logging for evaluations |
-| `log_file` | str | None | Log file path (None for console only) |
-| `log_format` | str | Standard | Log message format |
-| `log_request_details` | bool | False | Log detailed request/response information |
+| Parameter              | Type | Default  | Description                                 |
+| ---------------------- | ---- | -------- | ------------------------------------------- |
+| `log_level`            | str  | "INFO"   | Logging level (DEBUG, INFO, WARNING, ERROR) |
+| `enable_audit_logging` | bool | False    | Enable audit logging for evaluations        |
+| `log_file`             | str  | None     | Log file path (None for console only)       |
+| `log_format`           | str  | Standard | Log message format                          |
+| `log_request_details`  | bool | False    | Log detailed request/response information   |
 
 ### Performance and Caching
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `enable_result_caching` | bool | False | Cache evaluation results |
-| `cache_ttl` | int | 3600 | Cache time-to-live (seconds) |
-| `max_cache_size` | int | 1000 | Maximum number of cached results |
-| `enable_request_compression` | bool | True | Enable HTTP request compression |
-| `connection_pool_size` | int | 20 | HTTP connection pool size |
+| Parameter                    | Type | Default | Description                      |
+| ---------------------------- | ---- | ------- | -------------------------------- |
+| `enable_result_caching`      | bool | False   | Cache evaluation results         |
+| `cache_ttl`                  | int  | 3600    | Cache time-to-live (seconds)     |
+| `max_cache_size`             | int  | 1000    | Maximum number of cached results |
+| `enable_request_compression` | bool | True    | Enable HTTP request compression  |
+| `connection_pool_size`       | int  | 20      | HTTP connection pool size        |
 
 ## Advanced Configuration Scenarios
 
@@ -244,7 +253,7 @@ For detailed research evaluations:
 
 ```json
 {
-  "default_provider": "anthropic", 
+  "default_provider": "anthropic",
   "multi_criteria_settings": {
     "enabled_by_default": true,
     "timeout": 120,
@@ -344,7 +353,7 @@ tech_doc_criteria = EvaluationCriteria(
             scale_max=5,
             examples={
                 5: "All technical details are accurate and current",
-                3: "Generally accurate with minor technical issues", 
+                3: "Generally accurate with minor technical issues",
                 1: "Contains significant technical errors"
             }
         ),
@@ -366,7 +375,7 @@ tech_doc_criteria = EvaluationCriteria(
             weight=0.25
         ),
         CriterionDefinition(
-            name="practical_usefulness", 
+            name="practical_usefulness",
             description="Practical value and actionability",
             criterion_type=CriterionType.CONTEXTUAL,
             weight=0.2
@@ -405,7 +414,7 @@ Save custom criteria in JSON:
           }
         },
         {
-          "name": "clarity_for_audience", 
+          "name": "clarity_for_audience",
           "description": "Appropriate clarity for intended audience",
           "type": "qualitative",
           "weight": 0.25
@@ -418,14 +427,14 @@ Save custom criteria in JSON:
       "criteria": [
         {
           "name": "correctness",
-          "description": "Code correctness and functionality", 
+          "description": "Code correctness and functionality",
           "type": "factual",
           "weight": 0.4
         },
         {
           "name": "readability",
           "description": "Code readability and style",
-          "type": "qualitative", 
+          "type": "qualitative",
           "weight": 0.3
         },
         {
@@ -477,7 +486,7 @@ ENABLE_RESULT_CACHING=true
 ### Staging Environment
 
 ```bash
-# Staging .env  
+# Staging .env
 OPENAI_API_KEY=sk-staging-key-here
 ANTHROPIC_API_KEY=sk-ant-staging-key-here
 DEFAULT_PROVIDER=anthropic
@@ -586,7 +595,7 @@ Output shows configuration loading:
 
 ```
 DEBUG: Loading configuration from environment
-DEBUG: Found API key for provider: anthropic  
+DEBUG: Found API key for provider: anthropic
 DEBUG: Using default provider: anthropic
 DEBUG: Configuration validation passed
 INFO: LLM Judge initialized with provider: anthropic, model: claude-sonnet-4-20250514

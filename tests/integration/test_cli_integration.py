@@ -25,20 +25,25 @@ class TestCLIIntegration:
             '--criteria', 'accuracy'
         ]
         
-        # Mock the LLMJudge to avoid actual API calls
-        mock_result = {
-            'score': 4.5,
-            'reasoning': 'Accurate and concise explanation',
-            'confidence': 0.85
-        }
+        # Mock multi-criteria evaluation result
+        from src.llm_judge.domain.evaluation.results import CriterionScore, MultiCriteriaResult
+        
+        mock_criteria_result = MultiCriteriaResult(
+            criterion_scores=[
+                CriterionScore('accuracy', 5, 'Excellent accuracy', 0.9),
+                CriterionScore('clarity', 4, 'Good clarity', 0.8)
+            ],
+            judge_model='gpt-4'
+        )
         
         with patch('src.llm_judge.presentation.cli.main.LLMJudge') as mock_judge_class, \
              patch('sys.argv', ['llm-judge'] + test_args):
             
             # Setup mock judge
             mock_judge = AsyncMock()
-            mock_judge.evaluate_response.return_value = type('EvaluationResult', (), mock_result)()
+            mock_judge.evaluate_multi_criteria.return_value = mock_criteria_result
             mock_judge.judge_model = 'gpt-4'
+            mock_judge.close = AsyncMock()
             mock_judge_class.return_value = mock_judge
             
             # Capture stdout
@@ -46,13 +51,13 @@ class TestCLIIntegration:
                 await main()
                 
                 # Verify the judge was used correctly
-                mock_judge.evaluate_response.assert_called_once()
+                mock_judge.evaluate_multi_criteria.assert_called_once()
                 mock_judge.close.assert_called_once()
                 
                 # Check that JSON output was printed
                 mock_print.assert_called()
                 call_args = mock_print.call_args[0][0]
-                assert '"type": "evaluation"' in call_args
+                assert '"type": "multi_criteria_evaluation"' in call_args
 
     @pytest.mark.asyncio
     async def test_cli_compare_with_mock_judge(self):
@@ -129,11 +134,17 @@ class TestCLIIntegration:
             with patch('src.llm_judge.presentation.cli.main.LLMJudge') as mock_judge_class, \
                  patch('sys.argv', ['llm-judge'] + test_args):
                 
+                from src.llm_judge.domain.evaluation.results import CriterionScore, MultiCriteriaResult
+                
+                mock_criteria_result = MultiCriteriaResult(
+                    criterion_scores=[CriterionScore('accuracy', 4, 'Test evaluation', 0.7)],
+                    judge_model='gpt-4'
+                )
+                
                 mock_judge = AsyncMock()
-                mock_judge.evaluate_response.return_value = type('EvaluationResult', (), {
-                    'score': 3.5, 'reasoning': 'Test', 'confidence': 0.7
-                })()
+                mock_judge.evaluate_multi_criteria.return_value = mock_criteria_result
                 mock_judge.judge_model = 'gpt-4'
+                mock_judge.close = AsyncMock()
                 mock_judge_class.return_value = mock_judge
                 
                 with patch('builtins.print'):
@@ -196,22 +207,26 @@ class TestCLIIntegration:
         with patch('src.llm_judge.presentation.cli.main.LLMJudge') as mock_judge_class, \
              patch('sys.argv', ['llm-judge'] + test_args):
             
+            from src.llm_judge.domain.evaluation.results import CriterionScore, MultiCriteriaResult
+            
+            mock_criteria_result = MultiCriteriaResult(
+                criterion_scores=[CriterionScore('accuracy', 4, 'Well structured response', 0.8)],
+                judge_model='claude-3'
+            )
+            
             mock_judge = AsyncMock()
-            mock_judge.evaluate_response.return_value = type('EvaluationResult', (), {
-                'score': 4.0,
-                'reasoning': 'Well structured response',
-                'confidence': 0.8
-            })()
+            mock_judge.evaluate_multi_criteria.return_value = mock_criteria_result
             mock_judge.judge_model = 'claude-3'
+            mock_judge.close = AsyncMock()
             mock_judge_class.return_value = mock_judge
             
             with patch('builtins.print') as mock_print:
                 await main()
                 
-                # Check that text formatting was used
+                # Check that multi-criteria formatting was used
                 call_args = mock_print.call_args[0][0]
-                assert 'LLM-as-a-Judge Evaluation' in call_args
-                assert 'Score: 4.0/5' in call_args
+                assert 'Multi-Criteria LLM Evaluation Results' in call_args
+                assert 'accuracy' in call_args
                 assert 'Judge Model: claude-3' in call_args
 
     @pytest.mark.asyncio
@@ -232,11 +247,17 @@ class TestCLIIntegration:
             mock_config_obj = type('LLMConfig', (), {})()
             mock_config.return_value = mock_config_obj
             
+            from src.llm_judge.domain.evaluation.results import CriterionScore, MultiCriteriaResult
+            
+            mock_criteria_result = MultiCriteriaResult(
+                criterion_scores=[CriterionScore('accuracy', 3, 'Test evaluation', 0.6)],
+                judge_model='claude-3'
+            )
+            
             mock_judge = AsyncMock()
-            mock_judge.evaluate_response.return_value = type('EvaluationResult', (), {
-                'score': 3.0, 'reasoning': 'Test', 'confidence': 0.6
-            })()
+            mock_judge.evaluate_multi_criteria.return_value = mock_criteria_result
             mock_judge.judge_model = 'claude-3'
+            mock_judge.close = AsyncMock()
             mock_judge_class.return_value = mock_judge
             
             with patch('builtins.print'):

@@ -1,6 +1,6 @@
 # LLM-as-a-Judge System
 
-A comprehensive implementation of an LLM-as-a-Judge system for evaluating language model outputs with **multi-criteria evaluation by default**. Features comprehensive scoring across 7 evaluation dimensions with rich CLI interface and robust batch processing capabilities.
+A comprehensive implementation of an LLM-as-a-Judge system for evaluating language model outputs with **multi-criteria evaluation by default**. Features comprehensive scoring across 7 evaluation dimensions with rich CLI interface, robust batch processing capabilities, and **structured output support** across all providers.
 
 ## Quick Start
 
@@ -81,17 +81,37 @@ llm-as-a-judge/
 │   │       ├── test_*_client.py     # API client tests
 │   │       ├── test_config.py       # Configuration tests
 │   │       └── test_*_manager.py    # Resilience component tests
-│   └── integration/                 # Integration tests (cross-layer)
-│       ├── test_llm_judge_integration.py # End-to-end judge tests
-│       ├── test_error_integration.py     # Error handling integration
-│       └── test_timeout_integration.py   # Timeout behavior tests
-├── docs/                            # Layered documentation strategy
+│   ├── integration/                 # Integration tests (cross-layer)
+│   │   ├── test_llm_judge_integration.py # End-to-end judge tests
+│   │   ├── test_error_integration.py     # Error handling integration
+│   │   └── test_timeout_integration.py   # Timeout behavior tests
+│   └── fixtures/                    # Test fixtures and sample data
+│       ├── README.md               # Test fixtures documentation
+│       └── sample_data/            # Sample data for testing
+│           ├── minimal_batch.jsonl  # Minimal test batch
+│           ├── test_batch.jsonl    # Standard test scenarios
+│           └── sample_batch_results.json # Sample results format
+├── docs/                            # Comprehensive documentation
 │   ├── README.md                    # Documentation navigation guide
 │   ├── STRATEGY.md                  # Business vision and objectives
 │   ├── ARCHITECTURE.md              # System design and patterns
 │   ├── DOMAIN-MODEL.md              # Business concepts and language
 │   ├── IMPLEMENTATION.md            # Technical execution details
-│   └── TASKS.md                     # Current iteration breakdown
+│   ├── MULTI_CRITERIA_EVALUATION.md # Multi-criteria evaluation guide
+│   ├── STRUCTURED_OUTPUT.md         # Structured output implementation guide
+│   ├── API_REFERENCE.md             # Complete API documentation
+│   ├── CONFIGURATION.md             # Configuration and setup guide
+│   ├── TESTING.md                   # Testing overview
+│   ├── TASKS.md                     # Current iteration breakdown
+│   ├── development/                 # Development-specific documentation
+│   │   ├── CODE_PLAN.md             # Development planning and standards
+│   │   ├── BEDROCK_INTEGRATION.md   # AWS Bedrock integration details
+│   │   └── CONSISTENCY_IMPROVEMENTS_SUMMARY.md # Provider consistency
+│   └── testing/                     # Testing documentation
+│       ├── TEST_SUITE_SUMMARY.md    # Complete test suite overview
+│       ├── TEST_COVERAGE_MATRIX.md  # Detailed coverage matrix
+│       ├── TEST_SCENARIOS_DETAILED.md # Detailed test scenarios
+│       └── TEST_EXECUTION_GUIDE.md  # Test execution procedures
 ├── logs/                            # Application logs (gitignored)
 ├── .env.example                     # Environment variables template
 ├── .gitignore                       # Git ignore patterns
@@ -103,6 +123,7 @@ llm-as-a-judge/
 ## 🎯 Multi-Criteria Evaluation Features
 
 ✅ **Comprehensive Multi-Dimensional Analysis**
+
 - ✅ **7 evaluation criteria by default**: accuracy, completeness, clarity, relevance, helpfulness, coherence, appropriateness
 - ✅ **Weighted scoring system**: Each criterion has configurable weights (accuracy: 20%, etc.)
 - ✅ **Rich statistical analysis**: Mean, median, standard deviation, confidence intervals
@@ -110,6 +131,7 @@ llm-as-a-judge/
 - ✅ **Beautiful formatted output**: Color-coded tables, progress bars, and visual scoring
 
 ✅ **Advanced Display Capabilities**
+
 - ✅ **Rich CLI formatting**: Beautiful tables with Rich library integration
 - ✅ **Comprehensive JSON output**: Structured data with all criterion details
 - ✅ **Fallback text display**: Works without Rich library for basic terminals
@@ -117,15 +139,25 @@ llm-as-a-judge/
 - ✅ **Score visualization**: Color-coded scoring and percentage displays
 
 ✅ **Flexible Evaluation Modes**
+
 - ✅ **Multi-criteria by default**: Comprehensive 7-dimension analysis
 - ✅ **Single-criterion mode**: Backward compatible with `--single-criterion` flag
 - ✅ **Custom criteria support**: Adapt to different evaluation contexts
 - ✅ **Batch multi-criteria**: All batch operations use comprehensive evaluation
 - ✅ **JSON/Text output**: Structured or human-readable formats
 
+✅ **Structured Output Support**
+
+- ✅ **Provider-native structured output**: Uses each provider's JSON schema capabilities
+- ✅ **Guaranteed response format**: Consistent JSON structure across all providers
+- ✅ **Intelligent fallback parsing**: Handles parsing errors with sentiment analysis
+- ✅ **Type-safe validation**: Enforces proper data types and value ranges
+- ✅ **Cross-provider consistency**: Unified schema for OpenAI, Anthropic, and Bedrock
+
 ## Current Status
 
 ✅ **Project Structure Reorganization Complete**
+
 - ✅ Domain-Driven Design (DDD) layered architecture implemented
 - ✅ Clean separation of concerns across domain, application, infrastructure, and presentation layers
 - ✅ Comprehensive test suite organization by layer and type (unit/integration)
@@ -134,13 +166,15 @@ llm-as-a-judge/
 - ✅ All existing functionality preserved and verified working
 
 ✅ **Phase 1 Complete**: Working Minimal Implementation
-- ✅ Direct scoring evaluation (1-5 scale) with structured reasoning
+
+- ✅ Direct scoring evaluation (1-5 integer scale) with structured reasoning
 - ✅ **Pairwise comparison (A vs B vs tie) FULLY RECOVERED and operational**
 - ✅ Mock LLM integration for development and testing
 - ✅ Command-line demo interface with examples
 - ✅ Comprehensive planning documentation across all architectural levels
 
 ✅ **Phase 2 Infrastructure Complete**: Production-Ready Foundation
+
 - ✅ Real LLM API integration (OpenAI GPT-4, Anthropic Claude)
 - ✅ Robust error handling and retry logic with circuit breakers
 - ✅ Configuration management with hierarchical loading
@@ -152,6 +186,7 @@ llm-as-a-judge/
 - ✅ **Comprehensive CLI interface with evaluation and comparison commands**
 
 ✅ **Phase 3 Complete**: Enhanced Batch Processing & Multi-Criteria System
+
 - ✅ **Multi-criteria evaluation by default**: Comprehensive 7-dimension analysis for all evaluations
 - ✅ **Advanced batch processing**: Multi-criteria evaluation in batch operations with full metadata
 - ✅ **Rich CLI interface**: Beautiful formatted output with tables, statistics, and progress indicators
@@ -161,6 +196,7 @@ llm-as-a-judge/
 - ✅ **Domain-driven evaluation models**: Proper separation of criteria, scoring, and result aggregation
 
 ✅ **Testing Infrastructure Complete**
+
 - ✅ **168/168 tests passing (100% success rate)**
 - ✅ Comprehensive unit test coverage with proper SDK mocking
 - ✅ Integration tests with fallback manager validation
@@ -175,35 +211,37 @@ llm-as-a-judge/
 
 Following the AI Coding Agent Governance Framework, we maintain sophisticated documentation across multiple abstraction levels:
 
-| Document | Abstraction Level | Purpose | Primary Audience |
-|----------|-------------------|---------|------------------|
-| [docs/STRATEGY.md](docs/STRATEGY.md) | **Strategic** | Business vision, market analysis, success metrics | C-Suite, Product Strategy, Investors |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | **Architectural** | System design, component relationships, scalability | Solution Architects, Technical Leadership |
-| [docs/DOMAIN-MODEL.md](docs/DOMAIN-MODEL.md) | **Domain** | Business concepts, ubiquitous language, domain rules | Domain Experts, Senior Developers |
-| [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) | **Implementation** | Detailed technical execution with acceptance criteria | Development Teams, DevOps Engineers |
-| [docs/TASKS.md](docs/TASKS.md) | **Task** | Current sprint breakdown with validation gates | Individual Developers, Scrum Masters |
-| [CODE_PLAN.md](CODE_PLAN.md) | **Code** | Specific code structure and implementation examples | Junior/Mid-level Developers |
+| Document                                         | Abstraction Level  | Purpose                                               | Primary Audience                          |
+| ------------------------------------------------ | ------------------ | ----------------------------------------------------- | ----------------------------------------- |
+| [docs/STRATEGY.md](docs/STRATEGY.md)             | **Strategic**      | Business vision, market analysis, success metrics     | C-Suite, Product Strategy, Investors      |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)     | **Architectural**  | System design, component relationships, scalability   | Solution Architects, Technical Leadership |
+| [docs/DOMAIN-MODEL.md](docs/DOMAIN-MODEL.md)     | **Domain**         | Business concepts, ubiquitous language, domain rules  | Domain Experts, Senior Developers         |
+| [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) | **Implementation** | Detailed technical execution with acceptance criteria | Development Teams, DevOps Engineers       |
+| [docs/TASKS.md](docs/TASKS.md)                   | **Task**           | Current sprint breakdown with validation gates        | Individual Developers, Scrum Masters      |
+| [CODE_PLAN.md](CODE_PLAN.md)                     | **Code**           | Specific code structure and implementation examples   | Junior/Mid-level Developers               |
 
 ### 🎯 Documentation Synchronization Status
 
-| Document | Last Updated | Sync Status | Code Alignment |
-|----------|-------------|-------------|----------------|
-| STRATEGY.md | Current | ✅ Synchronized | Reflects current business objectives |
-| ARCHITECTURE.md | Current | ✅ Synchronized | Matches planned system design |
-| DOMAIN-MODEL.md | Current | ✅ Synchronized | Captures current domain understanding |
-| IMPLEMENTATION.md | Current | ✅ Synchronized | Detailed Phase 1 completion, Phase 2 planning |
-| TASKS.md | Current | ✅ Synchronized | Active sprint tasks with validation gates |
-| CODE_PLAN.md | Current | ✅ Synchronized | Matches current code structure |
-| README.md | Current | ✅ Synchronized | Reflects actual system state and capabilities |
+| Document          | Last Updated | Sync Status     | Code Alignment                                |
+| ----------------- | ------------ | --------------- | --------------------------------------------- |
+| STRATEGY.md       | Current      | ✅ Synchronized | Reflects current business objectives          |
+| ARCHITECTURE.md   | Current      | ✅ Synchronized | Matches planned system design                 |
+| DOMAIN-MODEL.md   | Current      | ✅ Synchronized | Captures current domain understanding         |
+| IMPLEMENTATION.md | Current      | ✅ Synchronized | Detailed Phase 1 completion, Phase 2 planning |
+| TASKS.md          | Current      | ✅ Synchronized | Active sprint tasks with validation gates     |
+| CODE_PLAN.md      | Current      | ✅ Synchronized | Matches current code structure                |
+| README.md         | Current      | ✅ Synchronized | Reflects actual system state and capabilities |
 
 ### 🎯 Development Phases
 
 #### Phase 1: MVP ✅ COMPLETE
+
 - ✅ Single-file working implementation
 - ✅ Core evaluation methods
 - ✅ Demo functionality
 
 #### Phase 2: Production Foundation ✅ COMPLETE
+
 - ✅ Real LLM API integration (OpenAI, Anthropic)
 - ✅ Error handling and retry logic
 - ✅ Configuration management
@@ -211,6 +249,7 @@ Following the AI Coding Agent Governance Framework, we maintain sophisticated do
 - [ ] Data persistence (Next)
 
 #### Phase 3: Advanced Features
+
 - [ ] Batch processing
 - [ ] REST API
 - [ ] Reference-based evaluation
@@ -218,6 +257,7 @@ Following the AI Coding Agent Governance Framework, we maintain sophisticated do
 - [ ] Analytics dashboard
 
 #### Phase 4: Enterprise Scale
+
 - [ ] Multi-tenancy
 - [ ] High availability
 - [ ] Advanced security
@@ -263,6 +303,7 @@ Key Principles:
 ## Key Features
 
 ### Evaluation Methods
+
 - **Multi-Criteria Evaluation**: Comprehensive 7-dimension analysis (accuracy, completeness, clarity, relevance, helpfulness, coherence, appropriateness)
 - **Direct Scoring**: Rate responses with detailed criterion-specific scoring and reasoning
 - **Pairwise Comparison**: Compare two responses (A vs B vs tie) with detailed analysis
@@ -270,11 +311,13 @@ Key Principles:
 - **Qualitative Feedback**: Strengths, weaknesses, and actionable improvement suggestions
 
 ### LLM Provider Support
+
 - **OpenAI**: GPT-4 and GPT-3.5 models with robust error handling
 - **Anthropic**: Claude-3 Sonnet with advanced multi-criteria prompting
 - **Fallback Systems**: Automatic provider switching and mock mode for development
 
 ### Evaluation Criteria System
+
 - **7 Default Criteria**: Comprehensive evaluation across multiple dimensions
 - **Weighted Scoring**: Configurable weights for different criteria (accuracy: 20%, completeness: 15%, etc.)
 - **Custom Criteria**: Support for domain-specific evaluation requirements
@@ -324,7 +367,7 @@ candidate_a = CandidateResponse(
 )
 
 candidate_b = CandidateResponse(
-    prompt="Explain quantum computing", 
+    prompt="Explain quantum computing",
     response="Quantum computers leverage quantum phenomena like superposition and entanglement.",
     model="claude-3"
 )
@@ -397,6 +440,7 @@ await judge.close()
 ```
 
 **Key Methods Available:**
+
 - `evaluate_response()`: Single response evaluation with 1-5 scoring
 - `compare_responses()`: **Pairwise comparison - FULLY OPERATIONAL**
 - Both methods support real LLM APIs (OpenAI, Anthropic) with fallback to mock mode
@@ -420,7 +464,7 @@ python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence" --sin
 # Show detailed multi-criteria breakdown
 python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence" --show-detailed
 
-# Compare two responses  
+# Compare two responses
 python -m llm_judge compare "Explain machine learning" "ML is AI subset" "Machine learning is a subset of AI that enables computers to learn from data"
 
 # Create and process batch evaluations (all use multi-criteria by default)
@@ -471,7 +515,7 @@ Create a configuration file to manage API keys and settings:
 ```json
 {
   "openai_api_key": "sk-your-openai-key-here",
-  "anthropic_api_key": "sk-ant-your-anthropic-key-here", 
+  "anthropic_api_key": "sk-ant-your-anthropic-key-here",
   "default_provider": "openai",
   "openai_model": "gpt-5-2025-08-07",
   "anthropic_model": "claude-sonnet-4-20250514",
@@ -484,6 +528,7 @@ Create a configuration file to manage API keys and settings:
 ### CLI Commands
 
 #### `evaluate` - Evaluate Single Response
+
 ```bash
 python -m llm_judge evaluate [OPTIONS] PROMPT RESPONSE
 
@@ -494,7 +539,8 @@ Options:
   --model TEXT           Model that generated the response
 ```
 
-#### `compare` - Compare Two Responses  
+#### `compare` - Compare Two Responses
+
 ```bash
 python -m llm_judge compare [OPTIONS] PROMPT RESPONSE_A RESPONSE_B
 
@@ -504,9 +550,10 @@ Options:
 ```
 
 #### Global Options
+
 ```bash
 --provider {openai,anthropic}  LLM provider to use as judge
---judge-model TEXT            Specific model to use as judge  
+--judge-model TEXT            Specific model to use as judge
 --config PATH                 Path to configuration file
 --output {text,json}          Output format (default: text)
 --verbose, -v                 Enable verbose output
@@ -515,6 +562,7 @@ Options:
 ### Output Formats
 
 **Multi-Criteria Text Format (default):**
+
 ```
 🎯 Multi-Criteria LLM Evaluation Results
 ================================================================================
@@ -539,6 +587,7 @@ Options:
 ```
 
 **Multi-Criteria JSON Format:**
+
 ```json
 {
   "type": "multi_criteria_evaluation",
@@ -556,7 +605,7 @@ Options:
       "weight": 0.2
     },
     {
-      "criterion": "clarity", 
+      "criterion": "clarity",
       "score": 4.0,
       "percentage": 80.0,
       "reasoning": "Clear and well articulated",
@@ -565,12 +614,13 @@ Options:
     }
   ],
   "strengths": ["Clear", "Accurate", "Relevant"],
-  "weaknesses": ["Lacks depth", "Needs examples"], 
+  "weaknesses": ["Lacks depth", "Needs examples"],
   "suggestions": ["Add more detail", "Provide context"]
 }
 ```
 
 ### Planned Enhanced Usage
+
 ```python
 # Real LLM integration (Phase 2)
 judge = EnhancedLLMJudge(provider="openai", api_key="sk-...")
@@ -593,10 +643,12 @@ POST /evaluate
 ## Development Setup
 
 ### Prerequisites
+
 - Python 3.9+
 - Optional: OpenAI or Anthropic API keys for real LLM integration
 
 ### Installation
+
 ```bash
 # Clone the repository
 git clone <repository-url>
@@ -648,6 +700,7 @@ python -c "import asyncio; from src.llm_judge import *; judge=LLMJudge(); asynci
 ```
 
 **Test Suite Coverage:**
+
 - ✅ **API Client Tests**: OpenAI and Anthropic SDK integration with proper mocking
 - ✅ **Resilience Tests**: Retry strategies, fallback management, circuit breakers
 - ✅ **Configuration Tests**: Environment loading, validation, error handling
@@ -659,6 +712,7 @@ python -c "import asyncio; from src.llm_judge import *; judge=LLMJudge(); asynci
 This project follows a structured development approach based on Domain-Driven Design:
 
 ### Development Guidelines
+
 1. **Documentation-First**: Review planning docs in `docs/` before coding
 2. **Layer Separation**: Respect the DDD architecture boundaries
 3. **Test-Driven**: Write tests before implementation (see `tests/` structure)
@@ -666,12 +720,14 @@ This project follows a structured development approach based on Domain-Driven De
 5. **Import Hygiene**: Follow the established import patterns (`src.llm_judge.*`)
 
 ### Contributing to Specific Layers
+
 - **Domain**: Focus on business logic, no external dependencies
-- **Application**: Orchestrate use cases, coordinate between layers  
+- **Application**: Orchestrate use cases, coordinate between layers
 - **Infrastructure**: Handle external concerns (APIs, config, persistence)
 - **Presentation**: User interfaces and input/output handling
 
 ### Adding New Features
+
 1. Update documentation in `docs/` first
 2. Write tests in appropriate `tests/unit/` or `tests/integration/` folder
 3. Implement in the correct architectural layer
@@ -680,17 +736,18 @@ This project follows a structured development approach based on Domain-Driven De
 
 ## Roadmap
 
-| Phase | Status | Key Deliverables | Timeline |
-|-------|--------|------------------|----------|
-| **Phase 1** | ✅ Complete | Minimal working implementation | Complete |
-| **Structure** | ✅ Complete | DDD architecture, test organization, documentation | Complete |
-| **Phase 2** | ✅ **Complete** | **Production infrastructure, real LLM integration, test reliability** | **Complete** |
-| **Phase 3** | ⏳ Ready to Start | Advanced features, REST API, batch processing | 6-8 weeks |
-| **Phase 4** | ⏳ Planned | Enterprise scale, multi-tenancy, high availability | 3-6 months |
+| Phase         | Status            | Key Deliverables                                                      | Timeline     |
+| ------------- | ----------------- | --------------------------------------------------------------------- | ------------ |
+| **Phase 1**   | ✅ Complete       | Minimal working implementation                                        | Complete     |
+| **Structure** | ✅ Complete       | DDD architecture, test organization, documentation                    | Complete     |
+| **Phase 2**   | ✅ **Complete**   | **Production infrastructure, real LLM integration, test reliability** | **Complete** |
+| **Phase 3**   | ⏳ Ready to Start | Advanced features, REST API, batch processing                         | 6-8 weeks    |
+| **Phase 4**   | ⏳ Planned        | Enterprise scale, multi-tenancy, high availability                    | 3-6 months   |
 
 ### ✅ Phase 2 Infrastructure - COMPLETED
+
 - ✅ **Real LLM API clients with comprehensive resilience patterns**
-- ✅ **Configuration management and advanced error handling** 
+- ✅ **Configuration management and advanced error handling**
 - ✅ **Complete pytest overhaul - 123/123 tests passing**
 - ✅ **compare_responses functionality fully recovered and operational**
 - ✅ **Async processing architecture with timeout management**
@@ -699,6 +756,7 @@ This project follows a structured development approach based on Domain-Driven De
 - ✅ **SDK integration testing with proper mocking**
 
 ### 🚀 Ready for Phase 3: Advanced Features
+
 - Enhanced CLI with interactive features and progress tracking
 - Data persistence and comprehensive result caching
 - REST API for HTTP-based evaluation services
@@ -712,10 +770,11 @@ MIT License - Open source implementation following the Evidently AI methodology.
 ## Key Features
 
 ### ✅ Current Implementation - FULLY FUNCTIONAL
+
 - **Multiple LLM Providers**: OpenAI GPT-4, Anthropic Claude with intelligent fallback
 - **Resilience Patterns**: Retry logic, circuit breakers, timeout management, error classification
-- **Evaluation Methods**: 
-  - ✅ **Direct scoring (1-5 scale) with detailed reasoning**
+- **Evaluation Methods**:
+  - ✅ **Direct scoring (1-5 integer scale) with detailed reasoning**
   - ✅ **Pairwise comparison (A vs B vs tie) - FULLY RECOVERED AND OPERATIONAL**
 - **Error Handling**: Comprehensive error classification and recovery with 6 error categories
 - **Configuration**: Flexible config with environment variable support and validation
@@ -726,18 +785,21 @@ MIT License - Open source implementation following the Evidently AI methodology.
 - **Request Management**: Timeout handling, request cancellation, connection pooling
 
 ### 🎯 Comparison Feature Highlights
+
 - **Both OpenAI and Anthropic**: Full support for both major LLM providers
 - **Intelligent Fallback**: Automatic failover between providers
 - **Structured Results**: Consistent response format with winner, reasoning, confidence
 - **Mock Support**: Full offline functionality for development and testing
 - **Error Resilience**: Graceful handling of API failures with fallback responses
 
-### 🔄 In Development  
+### 🔄 In Development
+
 - **Async Processing**: Performance optimization for batch operations
 - **Enhanced CLI**: Progress tracking and interactive features
 - **Result Caching**: Persistent storage for evaluation results
 
 ### 📋 Planned Features
+
 - **REST API**: HTTP service for evaluation requests
 - **Batch Processing**: Efficient handling of multiple evaluations
 - **Reference-Based Evaluation**: Compare against golden examples

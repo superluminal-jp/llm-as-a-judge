@@ -161,8 +161,15 @@ class TestEvaluateCommand:
         
         # Mock LLMJudge
         mock_judge = AsyncMock()
-        mock_result = EvaluationResult(score=4.5, reasoning="Good response", confidence=0.85)
-        mock_judge.evaluate_response.return_value = mock_result
+        # Create mock multi-criteria result
+        from src.llm_judge.domain.evaluation.results import MultiCriteriaResult, CriterionScore, AggregatedScore
+        mock_criterion_score = CriterionScore(criterion_name="accuracy", score=4, reasoning="Good accuracy")
+        mock_aggregated = AggregatedScore(overall_score=4.5, weighted_score=4.5, confidence=0.85, min_score=4, max_score=5)
+        mock_multi_result = MultiCriteriaResult(
+            criterion_scores=[mock_criterion_score],
+            aggregated=mock_aggregated
+        )
+        mock_judge.evaluate_multi_criteria.return_value = mock_multi_result
         mock_judge.judge_model = 'gpt-4'
         
         with patch('src.llm_judge.presentation.cli.main.load_cli_config') as mock_config, \
@@ -173,13 +180,16 @@ class TestEvaluateCommand:
             
             result = await evaluate_command(args)
             
-            assert result['type'] == 'evaluation'
-            assert result['score'] == 4.5
-            assert result['reasoning'] == "Good response"
-            assert result['confidence'] == 0.85
+            assert result['type'] == 'multi_criteria_evaluation'
+            assert 'multi_criteria_result' in result
             assert result['prompt'] == 'Test prompt'
             assert result['response'] == 'Test response'
             assert result['judge_model'] == 'gpt-4'
+            # Verify multi-criteria result structure
+            multi_result = result['multi_criteria_result']
+            assert multi_result.aggregated.overall_score == 4.5
+            assert len(multi_result.criterion_scores) == 1
+            assert multi_result.criterion_scores[0].score == 4
             
             mock_judge.close.assert_called_once()
 
@@ -196,8 +206,15 @@ class TestEvaluateCommand:
         args.criteria = 'overall quality'
         
         mock_judge = AsyncMock()
-        mock_result = EvaluationResult(score=3.0, reasoning="Average", confidence=0.7)
-        mock_judge.evaluate_response.return_value = mock_result
+        # Create mock multi-criteria result
+        from src.llm_judge.domain.evaluation.results import MultiCriteriaResult, CriterionScore, AggregatedScore
+        mock_criterion_score = CriterionScore(criterion_name="overall quality", score=3, reasoning="Average")
+        mock_aggregated = AggregatedScore(overall_score=3.0, weighted_score=3.0, confidence=0.7, min_score=3, max_score=3)
+        mock_multi_result = MultiCriteriaResult(
+            criterion_scores=[mock_criterion_score],
+            aggregated=mock_aggregated
+        )
+        mock_judge.evaluate_multi_criteria.return_value = mock_multi_result
         mock_judge.judge_model = 'claude-3'
         
         with patch('src.llm_judge.presentation.cli.main.load_cli_config') as mock_config, \
@@ -209,7 +226,10 @@ class TestEvaluateCommand:
             result = await evaluate_command(args)
             
             assert result['model'] == 'unknown'  # default when None provided
-            assert result['criteria'] == 'overall quality'
+            assert result['type'] == 'multi_criteria_evaluation'
+            # Check that the criteria is reflected in the multi-criteria result
+            multi_result = result['multi_criteria_result']
+            assert multi_result.criterion_scores[0].criterion_name == 'overall quality'
 
 
 class TestCompareCommand:
