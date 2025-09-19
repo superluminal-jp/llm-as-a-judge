@@ -17,7 +17,7 @@ from src.llm_judge.domain.batch.models import (
     BatchProgress,
     EvaluationType,
 )
-from src.llm_judge.application.services.llm_judge_service import (
+from src.llm_judge.domain.models import (
     CandidateResponse,
     EvaluationResult,
 )

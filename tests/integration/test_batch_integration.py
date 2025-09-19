@@ -15,14 +15,18 @@ from unittest.mock import AsyncMock, Mock, patch
 from src.llm_judge.application.services.batch_service import BatchProcessingService
 from src.llm_judge.application.services.llm_judge_service import (
     LLMJudge,
+)
+from src.llm_judge.domain.models import (
     CandidateResponse,
     EvaluationResult,
 )
 from src.llm_judge.domain.batch.models import (
     BatchRequest,
     BatchResult,
-    BatchStatus,
     BatchEvaluationItem,
+)
+from src.llm_judge.domain.batch.models import (
+    BatchStatus,
     EvaluationType,
 )
 from src.llm_judge.domain.evaluation.results import (

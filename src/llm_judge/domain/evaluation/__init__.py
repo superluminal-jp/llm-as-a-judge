@@ -1,18 +1,67 @@
 """
-Evaluation domain models for comprehensive multi-criteria assessment.
+Evaluation Bounded Context.
 
-This module contains the core evaluation logic and criteria definitions
-for the LLM-as-a-Judge system.
+This bounded context contains all domain logic related to evaluating
+LLM responses using various criteria and scoring systems.
 """
 
-from .criteria import EvaluationCriteria, CriterionDefinition, DefaultCriteria
-from .results import MultiCriteriaResult, CriterionScore, AggregatedScore
+from .entities import (
+    Evaluation,
+    EvaluationCriteria,
+    CriterionDefinition,
+    CriterionScore,
+    AggregatedScore,
+    MultiCriteriaResult,
+)
+
+from .value_objects import (
+    EvaluationType,
+    CriterionType,
+    EvaluationStatus,
+    EvaluationMetadata,
+)
+
+from .services import (
+    EvaluationService,
+    CriteriaService,
+    ScoringService,
+    MultiCriteriaEvaluationService,
+)
+
+from .repositories import (
+    EvaluationRepository,
+    CriteriaRepository,
+)
+
+from .specifications import (
+    EvaluationSpecification,
+    CriteriaSpecification,
+    ScoringSpecification,
+)
 
 __all__ = [
+    # Entities
+    "Evaluation",
     "EvaluationCriteria",
-    "CriterionDefinition", 
-    "DefaultCriteria",
-    "MultiCriteriaResult",
+    "CriterionDefinition",
     "CriterionScore",
-    "AggregatedScore"
+    "AggregatedScore",
+    "MultiCriteriaResult",
+    # Value Objects
+    "EvaluationType",
+    "CriterionType",
+    "EvaluationStatus",
+    "EvaluationMetadata",
+    # Services
+    "EvaluationService",
+    "CriteriaService",
+    "ScoringService",
+    "MultiCriteriaEvaluationService",
+    # Repositories
+    "EvaluationRepository",
+    "CriteriaRepository",
+    # Specifications
+    "EvaluationSpecification",
+    "CriteriaSpecification",
+    "ScoringSpecification",
 ]

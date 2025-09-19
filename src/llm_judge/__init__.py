@@ -14,25 +14,25 @@ Key Features:
 Quick Start:
     from llm_judge import LLMJudge, CandidateResponse, LLMConfig
     import asyncio
-    
+
     # Basic usage with mock providers
     judge = LLMJudge()
-    
+
     # Single evaluation
     candidate = CandidateResponse("What is AI?", "AI is artificial intelligence", "gpt-4")
     result = await judge.evaluate_response(candidate, "accuracy")
     print(f"Score: {result.score}/5")
-    
+
     # Pairwise comparison (FULLY OPERATIONAL)
     candidate_a = CandidateResponse("Explain ML", "Basic explanation", "gpt-4")
     candidate_b = CandidateResponse("Explain ML", "Detailed explanation", "claude-3")
     result = await judge.compare_responses(candidate_a, candidate_b)
     print(f"Winner: {result['winner']} - {result['reasoning']}")
-    
+
     # Real LLM integration
     config = LLMConfig(openai_api_key="sk-...", default_provider="openai")
     judge = LLMJudge(config)
-    
+
     await judge.close()  # Cleanup resources
 
 Status: Phase 2 Complete - Production Ready
@@ -40,19 +40,109 @@ Testing: 123/123 tests passing (100% reliability)
 Documentation: Comprehensive docs in /docs/
 """
 
-from .application.services.llm_judge_service import LLMJudge, CandidateResponse, EvaluationResult
+# Main application services (legacy compatibility)
+from .application.services.llm_judge_service import (
+    LLMJudge,
+    CandidateResponse,
+    EvaluationResult,
+)
 from .application.services.batch_service import BatchProcessingService
+
+# Configuration
 from .infrastructure.config.config import LLMConfig, load_config
+
+# Domain models (legacy compatibility)
 from .domain.batch import (
-    BatchRequest, BatchResult, BatchStatus, BatchEvaluationItem, 
-    BatchProgress, EvaluationType, BatchEvaluationService
+    BatchRequest,
+    BatchResult,
+    BatchStatus,
+    BatchEvaluationItem,
+    BatchProgress,
+    EvaluationType,
+    BatchEvaluationService,
+)
+
+# New domain structure
+from .domain.evaluation.entities import (
+    Evaluation,
+    MultiCriteriaResult,
+    CriterionScore,
+    AggregatedScore,
+)
+from .domain.evaluation.value_objects import (
+    EvaluationType as NewEvaluationType,
+    EvaluationStatus,
+    EvaluationPrompt,
+    EvaluationResponse,
+)
+from .domain.shared_kernel.value_objects import (
+    EvaluationId,
+    ModelName,
+    ProviderName,
+    Score,
+    Confidence,
+)
+from .domain.shared_kernel.exceptions import (
+    DomainException,
+    EvaluationException,
+    BatchProcessingException,
+)
+
+# Application use cases
+from .application.use_cases.evaluation_use_cases import (
+    EvaluateResponseUseCase,
+    CompareResponsesUseCase,
+    MultiCriteriaEvaluationUseCase,
+)
+
+# Infrastructure providers
+from .infrastructure.llm_providers.base import (
+    LLMProvider,
+    LLMProviderResponse,
+    LLMProviderError,
 )
 
 __version__ = "0.3.0"
 __status__ = "Phase 3 - Enhanced Batch Processing"
 __test_status__ = "168/168 tests passing (100% reliability)"
 __all__ = [
-    "LLMJudge", "CandidateResponse", "EvaluationResult", "LLMConfig", "load_config",
-    "BatchProcessingService", "BatchRequest", "BatchResult", "BatchStatus", 
-    "BatchEvaluationItem", "BatchProgress", "EvaluationType", "BatchEvaluationService"
+    # Legacy compatibility
+    "LLMJudge",
+    "CandidateResponse",
+    "EvaluationResult",
+    "LLMConfig",
+    "load_config",
+    "BatchProcessingService",
+    "BatchRequest",
+    "BatchResult",
+    "BatchStatus",
+    "BatchEvaluationItem",
+    "BatchProgress",
+    "EvaluationType",
+    "BatchEvaluationService",
+    # New domain structure
+    "Evaluation",
+    "MultiCriteriaResult",
+    "CriterionScore",
+    "AggregatedScore",
+    "NewEvaluationType",
+    "EvaluationStatus",
+    "EvaluationPrompt",
+    "EvaluationResponse",
+    "EvaluationId",
+    "ModelName",
+    "ProviderName",
+    "Score",
+    "Confidence",
+    "DomainException",
+    "EvaluationException",
+    "BatchProcessingException",
+    # Application use cases
+    "EvaluateResponseUseCase",
+    "CompareResponsesUseCase",
+    "MultiCriteriaEvaluationUseCase",
+    # Infrastructure providers
+    "LLMProvider",
+    "LLMProviderResponse",
+    "LLMProviderError",
 ]
