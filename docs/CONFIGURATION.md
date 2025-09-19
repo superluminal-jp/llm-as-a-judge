@@ -97,7 +97,7 @@ Create `config.json`:
 Use configuration file:
 
 ```bash
-python -m llm_judge --config config.json evaluate "Question" "Answer"
+python -m src.llm_judge --config config.json evaluate "Question" "Answer"
 ```
 
 ### 3. Programmatic Configuration
@@ -576,7 +576,7 @@ DEFAULT_PROVIDER=openai
 {"default_provider": "anthropic"}
 
 # CLI command
-python -m llm_judge --provider openai evaluate "Question" "Answer"
+python -m src.llm_judge --provider openai evaluate "Question" "Answer"
 
 # Result: Uses "openai" (CLI argument has highest priority)
 ```
@@ -588,7 +588,7 @@ python -m llm_judge --provider openai evaluate "Question" "Answer"
 Enable configuration logging:
 
 ```bash
-LOG_LEVEL=DEBUG python -m llm_judge evaluate "Question" "Answer"
+LOG_LEVEL=DEBUG python -m src.llm_judge evaluate "Question" "Answer"
 ```
 
 Output shows configuration loading:

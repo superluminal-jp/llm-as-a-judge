@@ -713,19 +713,19 @@ The LLM-as-a-Judge system provides a command-line interface for easy evaluation 
 
 ```bash
 # Evaluate a single response (uses comprehensive criteria by default)
-python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence"
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence"
 
 # Use specific criteria type
-python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence" --criteria-type basic
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --criteria-type basic
 
 # Use technical criteria for technical content
-python -m llm_judge evaluate "Explain ML" "Machine learning is..." --criteria-type technical
+python -m src.llm_judge evaluate "Explain ML" "Machine learning is..." --criteria-type technical
 
 # Compare two responses
-python -m llm_judge compare "Explain ML" "Basic explanation" "Detailed explanation"
+python -m src.llm_judge compare "Explain ML" "Basic explanation" "Detailed explanation"
 
 # Output as JSON
-python -m llm_judge evaluate "Question" "Answer" --output json
+python -m src.llm_judge evaluate "Question" "Answer" --output json
 ```
 
 #### CLI Options

@@ -18,17 +18,17 @@ cp .env.example .env
 # Edit .env with your API keys
 
 # CLI Usage - Multi-criteria evaluation (default)
-python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence"
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence"
 
 # CLI Usage - Single-criterion evaluation (legacy)
-python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence" --single-criterion --criteria "accuracy"
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --single-criterion --criteria "accuracy"
 
 # CLI Usage - Compare two responses
-python -m llm_judge compare "Explain ML" "Basic explanation" "Detailed explanation" --model-a gpt-4 --model-b claude-3
+python -m src.llm_judge compare "Explain ML" "Basic explanation" "Detailed explanation" --model-a gpt-4 --model-b claude-3
 
 # CLI Usage - Batch processing from file
-python -m llm_judge create-sample-batch sample.jsonl  # Create sample file
-python -m llm_judge batch sample.jsonl --output results.json --max-concurrent 5
+python -m src.llm_judge create-sample-batch sample.jsonl  # Create sample file
+python -m src.llm_judge batch sample.jsonl --output results.json --max-concurrent 5
 
 # Run tests
 pytest
@@ -427,7 +427,7 @@ config = LLMConfig(
 judge = LLMJudge(config=config)
 
 # CLI usage
-# python -m src.llm_judge "What is AI?" "AI is artificial intelligence"
+# python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence"
 
 # Close resources
 await judge.close()
@@ -492,47 +492,47 @@ The LLM-as-a-Judge system includes a comprehensive CLI for both evaluation and c
 
 ```bash
 # Get help
-python -m llm_judge --help
+python -m src.llm_judge --help
 
 # Multi-criteria evaluation (default) - evaluates across 7 dimensions
-python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence"
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence"
 
 # Single-criterion evaluation (legacy mode)
-python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence" --single-criterion
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --single-criterion
 
 # Show detailed multi-criteria breakdown
-python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence" --show-detailed
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --show-detailed
 
 # Compare two responses
-python -m llm_judge compare "Explain machine learning" "ML is AI subset" "Machine learning is a subset of AI that enables computers to learn from data"
+python -m src.llm_judge compare "Explain machine learning" "ML is AI subset" "Machine learning is a subset of AI that enables computers to learn from data"
 
 # Create and process batch evaluations (all use multi-criteria by default)
-python -m llm_judge create-sample-batch sample.jsonl --format jsonl
-python -m llm_judge batch sample.jsonl --output results.json --max-concurrent 10
+python -m src.llm_judge create-sample-batch sample.jsonl --format jsonl
+python -m src.llm_judge batch sample.jsonl --output results.json --max-concurrent 10
 ```
 
 ### Advanced Usage
 
 ```bash
 # Single-criterion with custom criteria
-python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence" --single-criterion --criteria "accuracy and completeness"
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --single-criterion --criteria "accuracy and completeness"
 
 # Specify models for comparison
-python -m llm_judge compare "Explain ML" "Basic answer" "Detailed answer" \
+python -m src.llm_judge compare "Explain ML" "Basic answer" "Detailed answer" \
   --model-a gpt-3.5-turbo --model-b gpt-4
 
 # Choose LLM provider and judge model
-python -m llm_judge --provider anthropic --judge-model claude-3 \
+python -m src.llm_judge --provider anthropic --judge-model claude-3 \
   evaluate "Question" "Answer"
 
 # Use configuration file
-python -m llm_judge --config ./config.json evaluate "Question" "Answer"
+python -m src.llm_judge --config ./config.json evaluate "Question" "Answer"
 
 # Output as JSON for programmatic use
-python -m llm_judge --output json evaluate "Question" "Answer"
+python -m src.llm_judge --output json evaluate "Question" "Answer"
 
 # Advanced batch processing
-python -m llm_judge batch large_dataset.jsonl \
+python -m src.llm_judge batch large_dataset.jsonl \
   --output detailed_results.json \
   --max-concurrent 20 \
   --max-retries 5 \
@@ -540,7 +540,7 @@ python -m llm_judge batch large_dataset.jsonl \
   --provider anthropic
 
 # Process with custom settings and progress indicators
-python -m llm_judge batch evaluations.csv \
+python -m src.llm_judge batch evaluations.csv \
   --output results.json \
   --max-concurrent 15 \
   --no-retry \
@@ -569,7 +569,7 @@ Create a configuration file to manage API keys and settings:
 #### `evaluate` - Evaluate Single Response
 
 ```bash
-python -m llm_judge evaluate [OPTIONS] PROMPT RESPONSE
+python -m src.llm_judge evaluate [OPTIONS] PROMPT RESPONSE
 
 Options:
   --single-criterion      Use single-criterion evaluation instead of multi-criteria (default: False)
@@ -581,7 +581,7 @@ Options:
 #### `compare` - Compare Two Responses
 
 ```bash
-python -m llm_judge compare [OPTIONS] PROMPT RESPONSE_A RESPONSE_B
+python -m src.llm_judge compare [OPTIONS] PROMPT RESPONSE_A RESPONSE_B
 
 Options:
   --model-a TEXT     Model that generated response A

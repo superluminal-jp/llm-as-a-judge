@@ -33,16 +33,16 @@ The system evaluates responses across these 7 criteria by default:
 
 ```bash
 # Default multi-criteria evaluation
-python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence"
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence"
 
 # Show detailed breakdown
-python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence" --show-detailed
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --show-detailed
 
 # JSON output with all criterion details
-python -m llm_judge --output json evaluate "What is AI?" "AI is artificial intelligence"
+python -m src.llm_judge --output json evaluate "What is AI?" "AI is artificial intelligence"
 
 # Batch processing (all items use multi-criteria)
-python -m llm_judge batch evaluations.jsonl --output results.json
+python -m src.llm_judge batch evaluations.jsonl --output results.json
 ```
 
 ### Programmatic Usage
@@ -284,13 +284,13 @@ Multi-criteria evaluation works seamlessly with batch processing:
 
 ```bash
 # Process batch with multi-criteria evaluation
-python -m llm_judge batch evaluations.jsonl --output detailed_results.json
+python -m src.llm_judge batch evaluations.jsonl --output detailed_results.json
 
 # High concurrency batch processing
-python -m llm_judge batch large_dataset.jsonl --max-concurrent 20 --output results.json
+python -m src.llm_judge batch large_dataset.jsonl --max-concurrent 20 --output results.json
 
 # Batch with progress tracking
-python -m llm_judge batch evaluations.jsonl --batch-name "Model Evaluation Study"
+python -m src.llm_judge batch evaluations.jsonl --batch-name "Model Evaluation Study"
 ```
 
 ### Batch Results
@@ -338,7 +338,7 @@ For users who prefer simpler evaluation with fewer criteria:
 
 ```bash
 # Use basic criteria type for simpler evaluation
-python -m llm_judge evaluate "What is AI?" "AI is artificial intelligence" --criteria-type basic
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --criteria-type basic
 
 # Programmatic basic criteria
 result = await judge.evaluate_multi_criteria(candidate, criteria_type="basic")
@@ -394,16 +394,16 @@ For high-volume scenarios, consider:
 
 ```bash
 # Enable verbose logging
-python -m llm_judge --verbose evaluate "Question" "Answer"
+python -m src.llm_judge --verbose evaluate "Question" "Answer"
 
 # Check system status
-python -m llm_judge --help
+python -m src.llm_judge --help
 ```
 
 ### Getting Help
 
 - Check the main README.md for setup and configuration
-- Review the CLI help: `python -m llm_judge --help`
+- Review the CLI help: `python -m src.llm_judge --help`
 - Examine batch result files for detailed error information
 - Enable verbose mode for detailed logging
 
