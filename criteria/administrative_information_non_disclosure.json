@@ -1,0 +1,542 @@
+{
+  "name": "Administrative Information Disclosure Evaluation",
+  "description": "Comprehensive criteria for evaluating whether administrative information falls under non-disclosure provisions according to Japan's Information Disclosure Law (Act No. 42 of 1999). This evaluation framework provides detailed legal analysis and decision-making guidance for administrative agencies.",
+  "version": "2.0",
+  "author": "Legal Compliance Team",
+  "created": "2024-01-01",
+  "updated": "2024-01-01",
+  "legal_basis": "情報公開法（平成11年法律第42号）",
+  "purpose": "To ensure consistent, legally sound decisions regarding information disclosure while protecting legitimate interests and maintaining transparency in government operations.",
+  "criteria": [
+    {
+      "name": "personal_information_protection",
+      "description": "Comprehensive evaluation of personal information protection under Article 5(1) of the Information Disclosure Law, including direct identification, indirect identification through cross-referencing, and potential harm to personal rights and interests.",
+      "weight": 0.25,
+      "evaluation_prompt": "個人情報の内容について詳細な分析を実施する：1) すべての個人識別子を特定する（氏名、生年月日、住所、電話番号、メールアドレス、ID番号、生体情報など）。2) 他の利用可能な情報との照合による間接識別リスクを評価する。3) 個人の権利利益への潜在的害悪を評価する（プライバシー、名誉、経済的利益、安全）。4) 開示例外を考慮する：法令や慣行により既に公開されている情報、生命・健康・生活・財産の保護に必要な情報、公務員等の職務遂行に関する情報。5) 「合理的な人」テストを適用する：合理的な人がこの情報を私的で開示により潜在的害悪があると考えるか？6) 匿名化の可能性とそれが識別リスクを排除するかを考慮する。",
+      "detailed_evaluation_steps": [
+        "ステップ1: 情報内のすべての個人識別子を特定する",
+        "ステップ2: 直接識別の可能性を評価する",
+        "ステップ3: 照合による間接識別を評価する",
+        "ステップ4: 個人の権利利益への潜在的害悪を決定する",
+        "ステップ5: 適用可能な開示例外を確認する",
+        "ステップ6: 匿名化または編集の可能性を考慮する",
+        "ステップ7: 全体的なリスク評価に基づいて最終決定を行う"
+      ],
+      "examples": {
+        "1": "明確な識別と重大な害悪の可能性を持つ高度に機密性の高い個人情報（医療記録、財務データ、家族関係）を含む。正当な開示理由が存在しない。例：詳細な医療診断、銀行口座情報、家族構成員の詳細、個人的な通信文。",
+        "2": "中程度の害悪の可能性と疑わしい開示必要性を持つ識別可能な個人情報を含む。例：自宅住所、個人電話番号、雇用履歴、学歴記録、公的文脈で表明された個人的意見。",
+        "3": "個人情報を含むが、正当な開示理由があるか匿名化可能である。例：公務員の業務関連連絡先、一般的な人口統計情報、匿名化された事例研究、公開会議出席記録。",
+        "4": "最小限の個人情報を含むか、明確な開示正当化がある。例：公務上の公務員名、既に公開記録にある情報、公共安全に必要な情報、匿名化された統計データ。",
+        "5": "個人情報がないか、明確に開示例外に該当する。例：政策文書、一般的な行政手続き、公共予算情報、非個人的統計データ、公務員の公務遂行に関する情報。"
+      },
+      "legal_considerations": {
+        "identification_methods": [
+          "固有識別子による直接識別",
+          "照合による間接識別",
+          "他の利用可能な情報による部分識別"
+        ],
+        "harm_types": [
+          "プライバシー侵害",
+          "名誉毀損",
+          "経済的害悪",
+          "安全上の懸念",
+          "差別リスク"
+        ],
+        "disclosure_exceptions": [
+          "法令や慣行により公開されている情報",
+          "生命・健康・生活・財産の保護",
+          "公務員等の職務関連情報"
+        ],
+        "anonymization_standards": [
+          "識別子の完全除去",
+          "統計的開示制御",
+          "K-匿名性原則",
+          "差分プライバシー技術"
+        ]
+      },
+      "domain_specific": true,
+      "requires_context": true,
+      "metadata": {
+        "category": "privacy_protection",
+        "importance": "critical",
+        "legal_article": "5条1号",
+        "related_laws": ["個人情報保護法", "行政機関個人情報保護法"],
+        "evaluation_complexity": "high",
+        "requires_legal_review": true
+      }
+    },
+    {
+      "name": "corporate_information_protection",
+      "description": "Comprehensive evaluation of corporate and business information protection under Article 5(2) of the Information Disclosure Law, covering corporations, organizations, and individual business operations, with assessment of competitive harm and legitimate business interests.",
+      "weight": 0.2,
+      "evaluation_prompt": "法人・事業情報について詳細な分析を実施する：1) 言及されているすべての法人、組織、または個人事業を特定する。2) 競争機密性を評価する：営業秘密、独自プロセス、財務業績、戦略計画、顧客リスト、供給業者関係、価格戦略、市場分析。3) 潜在的害悪を評価する：競争上の不利、事業機会の損失、事業関係の損害、財務損失、名誉毀損。4) 任意提供条件を考慮する：情報は機密性の期待を持って任意に提供されたか？5) 公益例外を評価する：生命・健康・生活・財産の保護に必要な情報、公共安全上の懸念、環境保護、消費者保護。6) 情報の年代と関連性を評価する：古い情報は競争機密性が低下している可能性がある。7) 部分開示の可能性を考慮する：公共価値を維持しながら機密部分を編集できるか？",
+      "detailed_evaluation_steps": [
+        "ステップ1: すべての法人と事業活動を特定する",
+        "ステップ2: 情報の競争機密性を評価する",
+        "ステップ3: 潜在的競争害悪を評価する",
+        "ステップ4: 任意提供条件と機密性期待を確認する",
+        "ステップ5: 公益例外を考慮する",
+        "ステップ6: 情報の年代と競争関連性を評価する",
+        "ステップ7: 部分開示または編集の可能性を評価する",
+        "ステップ8: 事業利益と公益のバランスを取って最終決定を行う"
+      ],
+      "examples": {
+        "1": "事業利益に明確に害悪を与える高度に機密性の高い競争情報を含む。例：詳細な営業秘密、独自製造プロセス、機密財務データ、戦略事業計画、顧客リスト、供給業者契約、価格戦略、市場調査データ、合併・買収協議。",
+        "2": "潜在的競争害悪を持つ法人情報を含む。例：一般的な財務業績データ、事業関係詳細、運営手順、従業員情報、事業通信文、規制遵守記録、一般的な市場分析。",
+        "3": "混合した開示含意を持つ法人情報を含む。例：公開入札情報、規制申請書、一般的な事業統計、公開会議記録、政府機関との一般的な通信文、日常運営データ。",
+        "4": "法人情報を含むが、公益により開示が正当化される可能性がある。例：環境影響データ、安全記録、公共契約詳細、規制違反、公共健康・安全に必要な情報、消費者保護情報。",
+        "5": "法人情報がないか、明確に開示例外に該当する。例：一般的な政策文書、公共予算情報、非機密性の行政手続き、既に公共領域にある情報、公共安全または環境保護に必要な情報。"
+      },
+      "legal_considerations": {
+        "competitive_harm_types": [
+          "競争優位性の損失",
+          "事業関係の損害",
+          "財務損失",
+          "名誉毀損",
+          "事業機会の損失"
+        ],
+        "voluntary_provision_analysis": [
+          "機密性期待",
+          "業界標準",
+          "合理的な事業慣行",
+          "公益考慮事項"
+        ],
+        "public_interest_exceptions": [
+          "生命・健康・生活・財産の保護",
+          "公共安全",
+          "環境保護",
+          "消費者保護",
+          "規制遵守"
+        ],
+        "redaction_considerations": [
+          "部分開示の可能性",
+          "機密部分の特定",
+          "公共価値の保持",
+          "技術的実現可能性"
+        ]
+      },
+      "domain_specific": true,
+      "requires_context": true,
+      "metadata": {
+        "category": "business_protection",
+        "importance": "high",
+        "legal_article": "5条2号",
+        "related_laws": ["不正競争防止法", "会社法", "独占禁止法"],
+        "evaluation_complexity": "high",
+        "requires_legal_review": true
+      }
+    },
+    {
+      "name": "national_security_concerns",
+      "description": "Comprehensive evaluation of national security and international relations concerns under Article 5(3) of the Information Disclosure Law, requiring reasonable grounds for administrative agency head determination and assessment of potential harm to national interests.",
+      "weight": 0.2,
+      "evaluation_prompt": "国家安全保障について徹底的な評価を実施する：1) 機密情報カテゴリーを特定する：防衛能力、諜報活動、外交通信、セキュリティプロトコル、重要インフラ詳細、テロ対策措置、サイバーセキュリティ情報。2) 国家安全保障への潜在的害悪を評価する：防衛能力の侵害、諜報源・手法の暴露、セキュリティ活動の損害、重要インフラへの脅威。3) 国際関係への影響を評価する：同盟国との信頼関係の損害、外交交渉の侵害、機密外交通信の暴露、国際協力への害悪。4) 交渉上の不利を考慮する：交渉立場の暴露、交渉力の侵害、将来の交渉見通しへの損害。5) 合理的根拠テストを適用する：行政機関の長に十分な懸念の根拠があるか？6) 情報分類レベルと既存のセキュリティプロトコルを考慮する。7) 時間的機密性を評価する：現在と歴史的情報の関連性。8) 開示への公益とセキュリティリスクを評価する。",
+      "detailed_evaluation_steps": [
+        "ステップ1: 機密情報カテゴリーと分類レベルを特定する",
+        "ステップ2: 国家安全保障への潜在的害悪を評価する",
+        "ステップ3: 国際関係への影響を評価する",
+        "ステップ4: 交渉上の不利リスクを考慮する",
+        "ステップ5: 機関長決定のための合理的根拠テストを適用する",
+        "ステップ6: 情報の年代と現在の関連性を考慮する",
+        "ステップ7: 公益とセキュリティリスクのバランスを評価する",
+        "ステップ8: 適切なセキュリティクリアランスレビューと共に最終決定を行う"
+      ],
+      "examples": {
+        "1": "国家安全保障または国際関係に重大な害悪を与える高度に機密性の高い情報を明確に含む。例：詳細な防衛能力、諜報源と手法、機密外交通信、重要インフラの脆弱性、活動中のテロ対策活動、サイバーセキュリティ防衛システム、核セキュリティ情報、軍事展開計画。",
+        "2": "慎重な評価を必要とする潜在的な国家安全保障含意を持つ情報を含む。例：一般的な防衛政策議論、外交会議記録、セキュリティプロトコル詳細、インフラ情報、一般的な諜報評価、国境セキュリティ措置、緊急対応計画。",
+        "3": "事例別評価を必要とする混合したセキュリティ含意を持つ情報を含む。例：歴史的外交記録、一般的な政策議論、公共セキュリティ情報、セキュリティ機関を含む日常行政手続き、一般的な国際協力情報。",
+        "4": "最小限のセキュリティ懸念を持つ情報を含むが、レビューが必要な場合がある。例：一般的な国際関係情報、公共政策議論、日常行政手続き、一般的なセキュリティ意識情報、非機密外交通信。",
+        "5": "国家安全保障または国際関係の懸念がない。例：一般的な行政手続き、公共政策文書、日常通信文、一般的な統計データ、既に公共領域にある情報、非機密国際協力情報。"
+      },
+      "legal_considerations": {
+        "security_harm_types": [
+          "防衛能力の侵害",
+          "諜報源の暴露",
+          "セキュリティ活動の妨害",
+          "重要インフラへの脅威",
+          "テロ対策の侵害"
+        ],
+        "international_relations_impact": [
+          "同盟信頼関係の損害",
+          "外交交渉の侵害",
+          "国際協力の妨害",
+          "交渉立場の暴露"
+        ],
+        "reasonable_grounds_requirements": [
+          "機関長の決定",
+          "十分な事実的根拠",
+          "専門的セキュリティ評価",
+          "法的レビュー要件"
+        ],
+        "classification_considerations": [
+          "公式分類レベル",
+          "セキュリティクリアランス要件",
+          "知る必要の原則",
+          "時間的機密性要因"
+        ]
+      },
+      "domain_specific": true,
+      "requires_context": true,
+      "metadata": {
+        "category": "national_security",
+        "importance": "critical",
+        "legal_article": "5条3号",
+        "related_laws": [
+          "特定秘密の保護に関する法律",
+          "自衛隊法",
+          "外務省設置法"
+        ],
+        "evaluation_complexity": "very_high",
+        "requires_legal_review": true,
+        "requires_security_clearance": true
+      }
+    },
+    {
+      "name": "public_safety_and_order",
+      "description": "Comprehensive evaluation of public safety and order maintenance concerns under Article 5(4) of the Information Disclosure Law, covering law enforcement operations, crime prevention, and public safety measures requiring reasonable grounds for administrative agency head determination.",
+      "weight": 0.15,
+      "evaluation_prompt": "公共安全について詳細な評価を実施する：1) 法執行機密情報を特定する：進行中の捜査、捜査手法、情報提供者情報、監視技術、証拠取扱手順、容疑者情報、証人保護詳細。2) 犯罪予防への影響を評価する：開示は予防戦略を侵害し、セキュリティ措置を暴露し、犯罪活動を可能にし、公共安全を危険にさらすか？3) 捜査妨害を評価する：開示は進行中の捜査を侵害し、捜査手法を暴露し、情報提供者や証人を危険にさらし、容疑者が正義を逃れることを可能にするか？4) 公訴維持を考慮する：開示は事件準備を侵害し、法的戦略を暴露し、公正な裁判プロセスを妨害するか？5) 刑執行への影響を評価する：開示は矯正業務を侵害し、職員や受刑者を危険にさらし、更生プログラムを妨害するか？6) 合理的根拠テストを適用する：行政機関の長に十分な懸念の根拠があるか？7) 情報の年代と継続的関連性を考慮する。8) 開示への公益と安全リスクを評価する。",
+      "detailed_evaluation_steps": [
+        "ステップ1: 法執行と公共安全の機密情報を特定する",
+        "ステップ2: 犯罪予防と鎮圧への影響を評価する",
+        "ステップ3: 捜査と公訴妨害リスクを評価する",
+        "ステップ4: 刑執行と矯正業務への影響を考慮する",
+        "ステップ5: 機関長決定のための合理的根拠テストを適用する",
+        "ステップ6: 情報の年代と継続的業務関連性を考慮する",
+        "ステップ7: 公益と公共安全リスクのバランスを評価する",
+        "ステップ8: 適切な法執行レビューと共に最終決定を行う"
+      ],
+      "examples": {
+        "1": "法執行または公共安全業務に明確に妨害を与える高度に機密性の高い情報を含む。例：進行中の捜査詳細、情報提供者の身元、監視手法、証拠収集技術、証人保護情報、容疑者取調べ詳細、潜入捜査情報、セキュリティシステムの脆弱性。",
+        "2": "公共安全業務への潜在的妨害を持つ情報を含む。例：一般的な捜査手順、法執行訓練手法、一般的なセキュリティ措置、日常業務手順、一般的な犯罪統計、公共安全プロトコル、緊急対応手順。",
+        "3": "慎重な評価を必要とする公共安全への混合した含意を持つ情報を含む。例：歴史的捜査記録、一般的な法執行政策、公共安全意識情報、一般的な犯罪予防戦略、法執行を含む日常行政手続き。",
+        "4": "最小限の公共安全懸念を持つ情報を含むが、レビューが必要な場合がある。例：一般的な公共安全情報、日常行政手続き、一般的な政策議論、公共意識向上キャンペーン、一般的な統計データ、非機密法執行情報。",
+        "5": "公共安全または法執行の懸念がない。例：一般的な行政手続き、公共政策文書、日常通信文、一般的な公共情報、既に公共領域にある情報、非機密公共安全情報。"
+      },
+      "legal_considerations": {
+        "law_enforcement_harm_types": [
+          "捜査の侵害",
+          "手法の暴露",
+          "情報提供者の危険",
+          "証拠の汚染",
+          "容疑者の警戒"
+        ],
+        "public_safety_impact": [
+          "犯罪予防の侵害",
+          "セキュリティ措置の暴露",
+          "公共の危険",
+          "緊急対応の妨害"
+        ],
+        "reasonable_grounds_requirements": [
+          "機関長の決定",
+          "法執行評価",
+          "専門的セキュリティ評価",
+          "法的レビュー要件"
+        ],
+        "operational_considerations": [
+          "継続中の業務",
+          "時間的機密性",
+          "手法の保護",
+          "職員の安全"
+        ]
+      },
+      "domain_specific": true,
+      "requires_context": true,
+      "metadata": {
+        "category": "public_safety",
+        "importance": "high",
+        "legal_article": "5条4号",
+        "related_laws": ["警察法", "刑事訴訟法", "少年法", "更生保護法"],
+        "evaluation_complexity": "high",
+        "requires_legal_review": true,
+        "requires_law_enforcement_review": true
+      }
+    },
+    {
+      "name": "internal_deliberation_protection",
+      "description": "Comprehensive evaluation of internal deliberation and consultation protection under Article 5(5) of the Information Disclosure Law, covering internal government processes, decision-making integrity, and protection of frank opinion exchange.",
+      "weight": 0.1,
+      "evaluation_prompt": "内部審議について詳細な評価を実施する：1) 内部審議内容を特定する：政策議論、意思決定プロセス、協議記録、審査手順、機関間通信、内部レビュー、職員推奨事項。2) 率直な意見交換への影響を評価する：開示は率直な議論を抑制し、誠実な評価を阻害し、内部通信を侵害し、自己検閲を生み出すか？3) 意思決定の中立性を評価する：開示は公平な意思決定を侵害し、内部バイアスを暴露し、政治的圧力を生み出し、客観的分析を妨害するか？4) 公共混乱リスクを考慮する：開示は誤解を招く印象を作り、内部プロセスの誤解釈を引き起こし、誤った期待を生み出し、公共の誤解を生み出すか？5) 不適切な有利・不利を評価する：開示は特定の当事者に不当な有利を与え、競争上の不利を作り、システムの操作を可能にし、公平な取扱いを侵害するか？6) 情報の年代と意思決定の最終性を考慮する。7) 透明性への公益とプロセス保護を評価する。8) 部分開示の可能性を評価する。",
+      "detailed_evaluation_steps": [
+        "ステップ1: 内部審議と協議内容を特定する",
+        "ステップ2: 率直な意見交換保護の必要性を評価する",
+        "ステップ3: 意思決定中立性の懸念を評価する",
+        "ステップ4: 公共混乱と誤解釈リスクを考慮する",
+        "ステップ5: 不適切な有利・不利の可能性を評価する",
+        "ステップ6: 情報の年代と意思決定の最終性を考慮する",
+        "ステップ7: 公益とプロセス保護のバランスを評価する",
+        "ステップ8: 部分開示または編集の可能性を評価する"
+      ],
+      "examples": {
+        "1": "意思決定プロセスの整合性に明確に害悪を与える高度に機密性の高い内部審議を含む。例：機密政策議論、内部職員推奨事項、機関間協議記録、意思決定審議、内部レビューと評価、率直な職員意見、予備分析と草案、内部紛争解決プロセス。",
+        "2": "審議プロセスに潜在的害悪を持つ内部情報を含む。例：一般的な政策議論記録、日常協議手順、内部通信プロトコル、一般的な職員意見、予備決定文書、内部調整記録、一般的な審査手順。",
+        "3": "慎重な評価を必要とする混合した開示含意を持つ内部情報を含む。例：歴史的審議記録、一般的な政策開発プロセス、日常行政手続き、一般的な協議慣行、非機密内部通信、一般的な意思決定フレームワーク。",
+        "4": "内部情報を含むが、開示が適切な場合がある。例：一般的な行政手続き、日常政策情報、一般的な協議結果、非機密内部プロセス、一般的な意思決定情報、公共向け内部手続き。",
+        "5": "内部審議の懸念がないか、明確に開示に適している。例：最終政策決定、公共行政手続き、一般的な政策情報、日常行政プロセス、既に公共領域にある情報、非機密行政情報。"
+      },
+      "legal_considerations": {
+        "deliberation_harm_types": [
+          "率直な意見の抑制",
+          "意思決定のバイアス",
+          "プロセスの操作",
+          "政治的干渉",
+          "職員の自己検閲"
+        ],
+        "public_interest_balance": [
+          "透明性の必要性",
+          "プロセス保護",
+          "意思決定の質",
+          "公共理解",
+          "説明責任要件"
+        ],
+        "disclosure_timing": [
+          "意思決定の最終性",
+          "プロセスの完了",
+          "情報の年代",
+          "継続的関連性",
+          "歴史的価値"
+        ],
+        "partial_disclosure_options": [
+          "最終決定のみ",
+          "プロセス要約",
+          "編集された審議",
+          "一般的なフレームワーク",
+          "公共部分"
+        ]
+      },
+      "domain_specific": true,
+      "requires_context": true,
+      "metadata": {
+        "category": "internal_process",
+        "importance": "medium",
+        "legal_article": "5条5号",
+        "related_laws": ["国家行政組織法", "内閣法", "各省設置法"],
+        "evaluation_complexity": "medium",
+        "requires_legal_review": false
+      }
+    },
+    {
+      "name": "administrative_operations_protection",
+      "description": "Comprehensive evaluation of administrative operations and business protection under Article 5(6) of the Information Disclosure Law, covering various administrative functions and their proper execution requirements.",
+      "weight": 0.1,
+      "evaluation_prompt": "行政運営について詳細な評価を実施する：1) 行政運営カテゴリーを特定する：監査・検査・執行業務、契約・交渉・訴訟活動、研究開発プロジェクト、人事管理機能、政府機関の企業運営。2) 監査・検査・執行への影響を評価する：開示は正確な事実確認を侵害し、監督の回避を可能にし、執行活動を妨害し、検査の有効性を侵害するか？3) 契約・交渉・訴訟の懸念を評価する：開示は交渉立場を侵害し、法的戦略を暴露し、契約履行を妨害し、訴訟結果を侵害するか？4) 研究妨害を考慮する：開示は研究の整合性を侵害し、研究不正を可能にし、データ収集を妨害し、研究の妥当性を侵害するか？5) 人事管理への影響を評価する：開示は公平な人事慣行を侵害し、業績評価を妨害し、懲戒プロセスを侵害し、採用を妨害するか？6) 企業運営の懸念を評価する：開示は事業運営を侵害し、財務管理を妨害し、競争地位を侵害し、サービス提供を妨害するか？7) 情報の年代と運営関連性を考慮する。8) 公益と運営効率のバランスを評価する。",
+      "detailed_evaluation_steps": [
+        "ステップ1: 特定の行政運営カテゴリーを特定する",
+        "ステップ2: 監査・検査・執行業務への影響を評価する",
+        "ステップ3: 契約・交渉・訴訟の懸念を評価する",
+        "ステップ4: 研究開発への妨害を考慮する",
+        "ステップ5: 人事管理への影響を評価する",
+        "ステップ6: 企業運営の懸念を評価する",
+        "ステップ7: 情報の年代と運営関連性を考慮する",
+        "ステップ8: 公益と運営効率のバランスを評価する"
+      ],
+      "examples": {
+        "1": "適切な行政運営に明確に妨害を与える高度に機密性の高い情報を含む。例：詳細な監査手順と結果、検査スケジュールと手法、執行戦略、契約交渉立場、訴訟戦略、研究方法論と予備結果、人事評価詳細、企業財務戦略、運営の脆弱性。",
+        "2": "行政運営への潜在的妨害を持つ情報を含む。例：一般的な監査手順、検査プロトコル、一般的な執行情報、契約履行詳細、一般的な訴訟情報、研究プロジェクト詳細、人事管理手順、一般的な企業運営、運営手順。",
+        "3": "慎重な評価を必要とする行政運営への混合した含意を持つ情報を含む。例：歴史的監査記録、一般的な検査情報、日常執行手順、一般的な契約情報、日常訴訟手順、一般的な研究情報、日常人事手順、一般的な企業情報、日常運営手順。",
+        "4": "行政運営への最小限の影響を持つ情報を含むが、レビューが必要な場合がある。例：一般的な行政手続き、日常運営情報、一般的な政策情報、一般的な契約情報、一般的な研究情報、一般的な人事情報、一般的な企業情報、日常行政プロセス。",
+        "5": "行政運営の懸念がないか、明確に開示に適している。例：一般的な政策文書、公共行政手続き、一般的な運営情報、既に公共領域にある情報、一般的な企業情報、日常行政プロセス、非機密運営情報。"
+      },
+      "legal_considerations": {
+        "operation_harm_types": [
+          "事実確認の侵害",
+          "執行の妨害",
+          "交渉上の不利",
+          "研究整合性の侵害",
+          "人事プロセスの妨害"
+        ],
+        "efficiency_considerations": [
+          "運営の有効性",
+          "資源配分",
+          "サービス提供",
+          "業績最適化",
+          "コスト管理"
+        ],
+        "public_interest_balance": [
+          "透明性の必要性",
+          "運営効率",
+          "サービス品質",
+          "公共説明責任",
+          "資源最適化"
+        ],
+        "disclosure_timing": [
+          "業務完了",
+          "プロセスの最終性",
+          "情報の年代",
+          "継続的関連性",
+          "歴史的価値"
+        ]
+      },
+      "domain_specific": true,
+      "requires_context": true,
+      "metadata": {
+        "category": "administrative_efficiency",
+        "importance": "medium",
+        "legal_article": "5条6号",
+        "related_laws": [
+          "会計検査院法",
+          "国家公務員法",
+          "地方公務員法",
+          "独立行政法人通則法"
+        ],
+        "evaluation_complexity": "medium",
+        "requires_legal_review": false
+      }
+    }
+  ],
+  "evaluation_guidelines": {
+    "overall_assessment": "Each criterion should be evaluated independently using the detailed evaluation steps provided. The final determination should consider the highest applicable non-disclosure provision. If any criterion scores 1-2, the information likely falls under non-disclosure provisions and requires careful legal review.",
+    "context_requirements": "All evaluations require comprehensive understanding of: 1) Specific administrative context and agency mission, 2) Nature and sensitivity of the information, 3) Potential impact of disclosure on various stakeholders, 4) Current legal and regulatory environment, 5) Historical precedents and case law, 6) Public interest considerations, 7) Technical feasibility of partial disclosure or redaction.",
+    "legal_consultation": "Legal consultation is required for: 1) Scores of 1-2 on any criterion, 2) Complex cases involving multiple criteria, 3) Novel or unprecedented situations, 4) High-stakes decisions with significant public impact, 5) Cases involving national security or public safety concerns, 6) Situations where legal precedents are unclear or conflicting.",
+    "documentation": "All evaluation decisions must be thoroughly documented including: 1) Detailed analysis of each criterion, 2) Specific reasoning and legal basis, 3) Consideration of alternatives (redaction, partial disclosure), 4) Public interest analysis, 5) Risk assessment, 6) Legal consultation records, 7) Final determination rationale, 8) Appeal and review procedures.",
+    "decision_making_process": {
+      "step_1": "Initial information assessment and categorization",
+      "step_2": "Apply detailed evaluation steps for each relevant criterion",
+      "step_3": "Score each criterion using the 1-5 scale with specific examples",
+      "step_4": "Identify highest applicable non-disclosure provision",
+      "step_5": "Consider partial disclosure or redaction possibilities",
+      "step_6": "Conduct public interest analysis",
+      "step_7": "Seek legal consultation if required",
+      "step_8": "Make final determination with comprehensive documentation",
+      "step_9": "Implement decision with appropriate safeguards",
+      "step_10": "Monitor and review decision as needed"
+    },
+    "quality_assurance": {
+      "review_requirements": "All decisions must undergo appropriate review based on complexity and risk level",
+      "consistency_checks": "Ensure consistency with similar past decisions and established precedents",
+      "stakeholder_consultation": "Consult relevant stakeholders when appropriate and legally permissible",
+      "continuous_improvement": "Regular review and updating of evaluation criteria and processes"
+    }
+  },
+  "scoring_interpretation": {
+    "1": {
+      "meaning": "Strong non-disclosure - Information clearly falls under non-disclosure provisions",
+      "action_required": "Immediate non-disclosure recommended. Legal consultation mandatory. Document decision thoroughly with specific legal basis.",
+      "risk_level": "High - Significant legal and operational risks if disclosed",
+      "review_level": "Senior legal review required"
+    },
+    "2": {
+      "meaning": "Likely non-disclosure - Information probably falls under non-disclosure provisions",
+      "action_required": "Non-disclosure recommended. Legal consultation strongly advised. Consider partial disclosure or redaction alternatives.",
+      "risk_level": "Moderate-High - Substantial risks if disclosed without careful consideration",
+      "review_level": "Legal review recommended"
+    },
+    "3": {
+      "meaning": "Uncertain - Requires careful legal review and case-by-case determination",
+      "action_required": "Thorough legal analysis required. Consider all alternatives including partial disclosure, redaction, or conditional disclosure.",
+      "risk_level": "Moderate - Balanced risks requiring careful evaluation",
+      "review_level": "Standard legal review"
+    },
+    "4": {
+      "meaning": "Likely disclosure - Information probably can be disclosed with appropriate safeguards",
+      "action_required": "Disclosure recommended with appropriate safeguards. Consider redaction of sensitive portions. Monitor for any concerns.",
+      "risk_level": "Low-Moderate - Minimal risks with proper safeguards",
+      "review_level": "Standard administrative review"
+    },
+    "5": {
+      "meaning": "Clear disclosure - Information can be disclosed without concerns",
+      "action_required": "Disclosure recommended without restrictions. Standard administrative processing.",
+      "risk_level": "Low - Minimal or no risks identified",
+      "review_level": "Standard administrative review"
+    }
+  },
+  "implementation_notes": {
+    "version_control": "This criteria set should be regularly reviewed and updated to reflect changes in law, regulations, and best practices.",
+    "training_requirements": "All evaluators must receive comprehensive training on these criteria and the underlying legal framework.",
+    "quality_metrics": "Track evaluation consistency, decision quality, and legal compliance to ensure continuous improvement.",
+    "stakeholder_feedback": "Regular feedback from legal experts, administrative staff, and public stakeholders should inform criteria refinement."
+  },
+  "japanese_administrative_context": {
+    "current_legal_framework": {
+      "primary_law": "行政機関の保有する情報の公開に関する法律（平成11年法律第42号）",
+      "supporting_laws": [
+        "特定秘密の保護に関する法律（平成25年法律第108号）",
+        "個人情報保護法（平成15年法律第57号）",
+        "行政機関個人情報保護法（平成15年法律第58号）"
+      ],
+      "recent_developments": "2024年現在、情報公開法の運用において、部分開示や裁量的開示の活用が増加している"
+    },
+    "administrative_practices": {
+      "review_process": {
+        "initial_assessment": "行政機関による初回判定",
+        "appeal_process": "不服申立て制度（情報公開審査会への諮問）",
+        "timeline": "特段の事情がない限り90日以内に諮問",
+        "burden_of_proof": "行政機関が不開示判断の合理性を立証する責任"
+      },
+      "partial_disclosure": {
+        "definition": "文書の一部が不開示事由に該当する場合の部分開示",
+        "implementation": "不開示部分を黒塗り等で処理して開示",
+        "legal_basis": "情報公開法第6条",
+        "practical_considerations": "技術的実現可能性とコストの検討"
+      },
+      "discretionary_disclosure": {
+        "definition": "公益上の理由により裁量的に開示する制度",
+        "legal_basis": "情報公開法第7条",
+        "application_criteria": "公益上の理由が開示事由を上回る場合",
+        "decision_authority": "行政機関の長の判断"
+      }
+    },
+    "specific_japanese_examples": {
+      "personal_information": [
+        "特定の個人名が記載された求職票",
+        "個人の医療記録",
+        "個人の納税情報",
+        "公務員の人事評価記録"
+      ],
+      "corporate_information": [
+        "特定の会社の就業規則",
+        "企業の財務情報",
+        "特許出願の詳細",
+        "入札参加企業の技術情報"
+      ],
+      "national_security": [
+        "防衛装備品の詳細仕様",
+        "外交交渉の内部文書",
+        "サイバーセキュリティ対策の詳細",
+        "重要インフラの脆弱性情報"
+      ],
+      "public_safety": [
+        "捜査手法の詳細",
+        "防災計画の具体的措置",
+        "テロ対策の詳細情報",
+        "原子力施設のセキュリティ情報"
+      ],
+      "internal_deliberation": [
+        "政策決定過程の内部検討資料",
+        "人事異動の内部協議記録",
+        "予算編成の内部審議記録",
+        "規制制定の内部検討資料"
+      ],
+      "administrative_operations": [
+        "監査手順の詳細",
+        "契約交渉の内部戦略",
+        "研究開発の詳細計画",
+        "人事管理の内部基準"
+      ]
+    },
+    "institutional_guidelines": {
+      "ministry_of_health_labor_and_welfare": {
+        "document": "不開示情報に関する判断基準（法第5条関係）",
+        "url": "https://www.mhlw.go.jp/jouhou/koukai03/02.html",
+        "key_features": "個人情報の取り扱いや公務員等の職務遂行に関する情報の開示基準を詳細に定めている"
+      },
+      "ministry_of_finance": {
+        "document": "財務省審査基準",
+        "url": "https://www.mof.go.jp/application-contact/procedure/disclosure_etc/disclosure/faq/a_009.htm",
+        "key_features": "開示・不開示の判断基準や手続きを明示している"
+      },
+      "cabinet_legislation_bureau": {
+        "document": "内閣法制局における行政機関の保有する情報の公開に関する法律に基づく処分に係る審査基準",
+        "url": "https://clb.go.jp/contact/disclosure/standard/",
+        "key_features": "部分開示や公益上の理由による裁量的開示に関する判断基準を詳細に説明している"
+      }
+    },
+    "recent_trends_and_challenges": {
+      "increased_transparency": "部分開示や裁量的開示の活用が増加",
+      "digital_transformation": "電子文書の取り扱いに関する新たな課題",
+      "cybersecurity_concerns": "サイバーセキュリティ情報の保護強化",
+      "public_interest_balance": "公益上の理由による開示の判断基準の明確化",
+      "appeal_process_improvement": "情報公開審査会の迅速な処理の重要性"
+    }
+  }
+}

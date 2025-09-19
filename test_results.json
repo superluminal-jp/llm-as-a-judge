@@ -1,0 +1,391 @@
+{
+  "batch_summary": {
+    "batch_id": "1f60ca7b-0d71-4071-8b0f-b594190b302d",
+    "status": "completed",
+    "total_items": 8,
+    "successful_items": 8,
+    "failed_items": 0,
+    "success_rate": 1.0,
+    "processing_duration": 162.008534,
+    "average_processing_time": 20.250460267066956,
+    "total_cost": null
+  },
+  "results": [
+    {
+      "item_id": "78a77532-bbd8-4653-b2f7-2194e53a7322",
+      "status": "success",
+      "evaluation_type": "single",
+      "processed_at": "2025-09-20T00:04:08.271988",
+      "processing_duration": 17.628045082092285,
+      "result": {
+        "score": 3.55,
+        "reasoning": "The response provides an accurate but overly brief assessment of non-disclosure grounds. While it correctly identifies the confidential nature of the medical and personal information and reaches the right conclusion, it lacks the comprehensive analysis expected for a thorough legal evaluation. The response would benefit from more detailed examination of specific legal provisions and systematic categorization of different types of information.",
+        "confidence": 0.89,
+        "metadata": {
+          "multi_criteria": true,
+          "criteria_count": 7,
+          "individual_scores": {
+            "accuracy": {
+              "score": 4,
+              "reasoning": "The response correctly identifies that the information contains personal medical data that would be subject to non-disclosure under information disclosure laws. The assessment that this constitutes highly confidential medical information that could cause harm if disclosed is factually accurate. However, it lacks specific reference to relevant legal provisions."
+            },
+            "completeness": {
+              "score": 2,
+              "reasoning": "The response provides only a general conclusion without detailed analysis of specific non-disclosure grounds. It fails to systematically evaluate each piece of information (medical diagnosis, personal identifiers, financial data, etc.) or cite specific legal provisions that would apply to different types of information."
+            },
+            "relevance": {
+              "score": 5,
+              "reasoning": "The response directly addresses the question about evaluating non-disclosure grounds under information disclosure law. It stays completely on topic and provides a relevant assessment of the confidential nature of the provided information."
+            },
+            "clarity": {
+              "score": 4,
+              "reasoning": "The response is clearly written and easy to understand. The language is precise and the conclusion is stated unambiguously. The structure is logical, though brief."
+            },
+            "helpfulness": {
+              "score": 2,
+              "reasoning": "While the response provides a correct general conclusion, it offers limited practical value for someone needing to understand the specific legal grounds for non-disclosure. It lacks actionable details about which specific provisions apply or how to categorize different types of information."
+            },
+            "coherence": {
+              "score": 4,
+              "reasoning": "The response presents a logically consistent argument that flows well from identifying the nature of the information to concluding about non-disclosure. The reasoning is internally consistent and well-structured despite being brief."
+            },
+            "appropriateness": {
+              "score": 4,
+              "reasoning": "The tone and style are appropriate for an academic legal analysis context. The language is professional and suitable for scholarly discourse, using appropriate legal terminology."
+            }
+          }
+        }
+      },
+      "metadata": {
+        "source_line": 1
+      },
+      "prompt": "以下の情報について、情報公開法に基づく不開示事由該当性を評価してください。\n\n患者ID: 12345-67890\n氏名: 田中太郎\n生年月日: 1980年4月15日\n住所: 東京都渋谷区恵比寿1-2-3\n診断: 統合失調症、うつ病\n治療歴: 2019年から精神科通院中\n家族構成: 妻、子供2人\n職業: 会社員（IT企業）\n収入: 年収600万円\n保険情報: 健康保険証番号 12345678901",
+      "response": "個人情報保護の観点から明確に不開示事由に該当する。特定個人を識別できる高度に機密性の高い医療情報で、開示により個人の権利利益に重大な害悪を与える可能性が高い。",
+      "model": "unknown",
+      "criteria": "overall quality"
+    },
+    {
+      "item_id": "71b11144-58be-4a82-84f5-eeeee757542e",
+      "status": "success",
+      "evaluation_type": "single",
+      "processed_at": "2025-09-20T00:04:25.572673",
+      "processing_duration": 17.300275802612305,
+      "result": {
+        "score": 3.55,
+        "reasoning": "The response provides a correct but overly simplified assessment of the non-disclosure eligibility. While it accurately identifies that the information contains trade secrets warranting protection, it lacks the comprehensive analysis expected for a thorough legal evaluation. The response would benefit from examining each category of information separately and providing more detailed reasoning based on specific legal criteria.",
+        "confidence": 0.8855000000000001,
+        "metadata": {
+          "multi_criteria": true,
+          "criteria_count": 7,
+          "individual_scores": {
+            "accuracy": {
+              "score": 4,
+              "reasoning": "The response correctly identifies that the information contains trade secrets and confidential business information that would typically qualify for non-disclosure under information disclosure laws. The assessment that disclosure would harm business interests is factually sound for the types of information listed (manufacturing processes, customer lists, pricing strategies, etc.)."
+            },
+            "completeness": {
+              "score": 2,
+              "reasoning": "The response provides only a general conclusion without analyzing specific categories of information. It fails to address individual items like patent information (which may be public), development costs, or market launch dates separately. A comprehensive evaluation should examine each type of information against specific non-disclosure criteria."
+            },
+            "relevance": {
+              "score": 5,
+              "reasoning": "The response directly addresses the question about non-disclosure eligibility under information disclosure laws. It stays focused on the legal assessment requested and addresses the core issue of whether the information qualifies for non-disclosure protection."
+            },
+            "clarity": {
+              "score": 4,
+              "reasoning": "The response is clearly written and easy to understand. The conclusion is stated definitively and the reasoning is straightforward. However, it could benefit from more structured presentation of the legal analysis."
+            },
+            "helpfulness": {
+              "score": 2,
+              "reasoning": "While the response provides a clear conclusion, it lacks the detailed analysis that would be helpful for understanding why specific types of information qualify for non-disclosure. It doesn't provide actionable insights about which specific elements are most problematic or how to handle different categories of information."
+            },
+            "coherence": {
+              "score": 4,
+              "reasoning": "The response presents a logically consistent argument that flows from identifying the information as trade secrets to concluding non-disclosure is appropriate. The reasoning follows a clear logical progression without contradictions."
+            },
+            "appropriateness": {
+              "score": 4,
+              "reasoning": "The tone and style are appropriate for a legal/academic context. The language is professional and suitable for discussing information disclosure law. The response maintains an objective, analytical approach appropriate for legal evaluation."
+            }
+          }
+        }
+      },
+      "metadata": {
+        "source_line": 2
+      },
+      "prompt": "以下の情報について、情報公開法に基づく不開示事由該当性を評価してください。\n\n企業名: 株式会社テクノイノベーション\n新製品開発プロジェクト「プロジェクトX」\n技術仕様: 次世代半導体製造技術の詳細プロセス\n開発コスト: 総額50億円\n市場投入予定: 2025年3月\n競合他社との差別化ポイント: 独自の製造技術A-123\n顧客リスト: 主要取引先20社の詳細情報\n価格戦略: 初期価格設定とマーケティング戦略\n特許出願状況: 関連特許15件の詳細",
+      "response": "法人情報保護の観点から明確に不開示事由に該当する。企業の競争上の地位に重大な影響を与える営業秘密情報で、開示により事業利益に明確な害悪を与える。",
+      "model": "unknown",
+      "criteria": "overall quality"
+    },
+    {
+      "item_id": "104ade0f-1f8f-46d4-baec-4f0d348a5d9a",
+      "status": "success",
+      "evaluation_type": "single",
+      "processed_at": "2025-09-20T00:04:44.502610",
+      "processing_duration": 18.929518222808838,
+      "result": {
+        "score": 3.55,
+        "reasoning": "The response provides an accurate but overly simplified assessment of the non-disclosure eligibility question. While it correctly identifies the general principle that classified military information would likely be exempt from disclosure, it lacks the detailed analysis needed for a comprehensive legal evaluation. The response demonstrates good understanding of the core legal concepts but fails to provide the nuanced, item-by-item analysis that would be most valuable for practical application.",
+        "confidence": 0.8855000000000001,
+        "metadata": {
+          "multi_criteria": true,
+          "criteria_count": 7,
+          "individual_scores": {
+            "accuracy": {
+              "score": 4,
+              "reasoning": "The response correctly identifies that defense-related information, particularly classified military equipment specifications, would likely fall under non-disclosure provisions of information disclosure laws. The assessment that such information could harm national security and international relations if disclosed is factually sound under Japanese information disclosure law principles."
+            },
+            "completeness": {
+              "score": 2,
+              "reasoning": "The response provides only a general conclusion without analyzing specific information categories. It fails to evaluate individual items like budget information, personnel numbers, or base locations that might have different disclosure considerations. A comprehensive assessment should examine each information type separately against specific legal criteria."
+            },
+            "relevance": {
+              "score": 5,
+              "reasoning": "The response directly addresses the core question about non-disclosure eligibility under information disclosure law. It focuses specifically on the national security implications of the military information provided, which is exactly what was requested in the evaluation prompt."
+            },
+            "clarity": {
+              "score": 4,
+              "reasoning": "The response is clearly written and easy to understand. The reasoning is straightforward and the conclusion is unambiguous. The language is appropriate and the logical connection between classified military information and non-disclosure is clearly articulated."
+            },
+            "helpfulness": {
+              "score": 2,
+              "reasoning": "While the response provides a clear conclusion, it offers limited practical value for understanding the nuanced application of disclosure law. It doesn't help distinguish between different types of information or provide guidance on which specific legal provisions apply, limiting its utility for practical decision-making."
+            },
+            "coherence": {
+              "score": 4,
+              "reasoning": "The response presents a logically consistent argument that flows well from premise to conclusion. The reasoning connecting classified defense information to national security concerns and non-disclosure eligibility is internally consistent and well-structured."
+            },
+            "appropriateness": {
+              "score": 4,
+              "reasoning": "The tone and style are appropriate for academic legal analysis. The response maintains professional language suitable for discussing legal and policy matters, and avoids inappropriate speculation about sensitive security topics while providing substantive analysis."
+            }
+          }
+        }
+      },
+      "metadata": {
+        "source_line": 3
+      },
+      "prompt": "以下の情報について、情報公開法に基づく不開示事由該当性を評価してください。\n\n装備名: 次世代戦闘機F-X導入計画\n技術仕様: ステルス性能、レーダー探知距離、最大速度\n導入予算: 総額1兆円\n調達先: 米国ロッキード・マーティン社\n導入スケジュール: 2027年から段階的導入\n配備予定基地: 三沢基地、那覇基地\n運用要員: パイロット50名、整備員200名\n訓練計画: 米軍との共同訓練スケジュール\n機密レベル: 防衛秘密",
+      "response": "国家安全保障の観点から明確に不開示事由に該当する。国の安全保障に直接関わる機密情報で、開示により防衛能力の侵害や国際関係への重大な影響が予想される。",
+      "model": "unknown",
+      "criteria": "overall quality"
+    },
+    {
+      "item_id": "7c09daa8-3579-44a2-99a3-64ca4cefaf39",
+      "status": "success",
+      "evaluation_type": "single",
+      "processed_at": "2025-09-20T00:05:05.607144",
+      "processing_duration": 21.104478120803833,
+      "result": {
+        "score": 3.65,
+        "reasoning": "The response provides an accurate but overly brief assessment of FOI non-disclosure applicability. While it correctly identifies that the information falls under law enforcement exemptions and explains the public safety rationale, it lacks the detailed analysis expected for a comprehensive legal evaluation. The response would benefit from examining specific information categories and citing relevant legal provisions.",
+        "confidence": 0.9125,
+        "metadata": {
+          "multi_criteria": true,
+          "criteria_count": 7,
+          "individual_scores": {
+            "accuracy": {
+              "score": 4,
+              "reasoning": "The response correctly identifies that ongoing criminal investigations fall under non-disclosure provisions in freedom of information laws. The assessment that disclosure would interfere with law enforcement proceedings and endanger public safety is factually accurate according to standard FOI exemptions."
+            },
+            "completeness": {
+              "score": 2,
+              "reasoning": "The response provides only a general conclusion without analyzing specific information categories listed in the prompt. It fails to address individual elements like suspect information, investigation methods, informant details, evidence, arrest plans, victim information, and investigator details separately, which would be expected in a comprehensive FOI assessment."
+            },
+            "relevance": {
+              "score": 5,
+              "reasoning": "The response directly addresses the core question about FOI non-disclosure applicability for the criminal investigation information provided. It stays perfectly on topic and addresses the legal framework requested."
+            },
+            "clarity": {
+              "score": 4,
+              "reasoning": "The response is clearly written and easy to understand. The language is straightforward and the conclusion is unambiguous. The reasoning flow from public safety concerns to potential consequences is logical and well-articulated."
+            },
+            "helpfulness": {
+              "score": 3,
+              "reasoning": "While the response provides a clear conclusion, it offers limited practical guidance for understanding which specific aspects of the information would be exempt and why. It would be more helpful with detailed analysis of different information categories and applicable legal provisions."
+            },
+            "coherence": {
+              "score": 4,
+              "reasoning": "The response presents a logically consistent argument that flows well from identifying the exemption category to explaining the rationale. The connection between ongoing investigation status and non-disclosure requirements is coherently presented."
+            },
+            "appropriateness": {
+              "score": 4,
+              "reasoning": "The tone and style are appropriate for legal/academic analysis. The language is professional and suitable for discussing freedom of information law applications. The response maintains appropriate objectivity for legal assessment."
+            }
+          }
+        }
+      },
+      "metadata": {
+        "source_line": 4
+      },
+      "prompt": "以下の情報について、情報公開法に基づく不開示事由該当性を評価してください。\n\n事件名: 連続強盗事件（仮称）\n捜査状況: 現在進行中\n容疑者情報: 複数名の身元特定済み\n捜査手法: 張り込み場所、監視カメラ設置箇所\n情報提供者: 匿名情報提供者3名の詳細\n証拠収集: 指紋、DNA、防犯カメラ映像\n逮捕計画: 来週火曜日、複数箇所同時実行\n関係者: 被害者10名の詳細情報\n捜査員: 担当刑事の氏名と連絡先",
+      "response": "公共安全の観点から明確に不開示事由に該当する。進行中の捜査に重大な妨害を与える情報で、開示により捜査の失敗や関係者の危険を招く可能性が高い。",
+      "model": "unknown",
+      "criteria": "overall quality"
+    },
+    {
+      "item_id": "7923c289-c157-4917-9da2-e0262ae99ed1",
+      "status": "success",
+      "evaluation_type": "single",
+      "processed_at": "2025-09-20T00:05:24.338031",
+      "processing_duration": 18.730419874191284,
+      "result": {
+        "score": 3.4,
+        "reasoning": "The response provides a legally sound but incomplete assessment of non-disclosure applicability. While it correctly identifies internal deliberation protection as a key concern and demonstrates understanding of the legal framework, it lacks the comprehensive analysis expected for a thorough evaluation. The response is accurate and relevant but needs significant expansion to be truly helpful for practical application.",
+        "confidence": 0.875,
+        "metadata": {
+          "multi_criteria": true,
+          "criteria_count": 7,
+          "individual_scores": {
+            "accuracy": {
+              "score": 4,
+              "reasoning": "The response correctly identifies that internal deliberation protection (内部審議保護) is a valid non-disclosure reason under Japan's Freedom of Information Act. The assessment that frank opinion exchange could be inhibited and decision-making neutrality could be compromised is legally sound. The acknowledgment of transparency needs for policy matters is also accurate."
+            },
+            "completeness": {
+              "score": 2,
+              "reasoning": "The response is quite brief and lacks comprehensive analysis. It doesn't examine other potential non-disclosure reasons such as national security implications, economic policy confidentiality, or specific legal provisions. It fails to analyze different components of the information separately or provide detailed legal reasoning for the assessment."
+            },
+            "relevance": {
+              "score": 5,
+              "reasoning": "The response directly addresses the question about evaluating non-disclosure reasons under the Freedom of Information Act. It focuses specifically on the internal deliberation aspect which is highly relevant to the sensitive policy discussions described in the prompt."
+            },
+            "clarity": {
+              "score": 3,
+              "reasoning": "The response is generally clear and uses appropriate legal terminology. However, it's quite concise and could benefit from more detailed explanation of the reasoning process. The structure is logical but somewhat abbreviated for a comprehensive legal assessment."
+            },
+            "helpfulness": {
+              "score": 2,
+              "reasoning": "While the response provides a basic assessment, it lacks practical guidance on how to apply the evaluation or what specific factors should be considered. It doesn't offer actionable insights for someone needing to make an actual disclosure determination."
+            },
+            "coherence": {
+              "score": 4,
+              "reasoning": "The response presents a coherent argument flow: identifies the main non-disclosure reason, explains the rationale, acknowledges competing transparency interests. The logic is internally consistent and well-structured despite being brief."
+            },
+            "appropriateness": {
+              "score": 4,
+              "reasoning": "The tone and style are appropriate for academic/legal analysis. Uses proper legal terminology and maintains professional objectivity. The balanced approach acknowledging both non-disclosure reasons and transparency needs is suitable for academic discourse."
+            }
+          }
+        }
+      },
+      "metadata": {
+        "source_line": 5
+      },
+      "prompt": "以下の情報について、情報公開法に基づく不開示事由該当性を評価してください。\n\n政策名: 消費税増税に関する内部検討\n検討期間: 2024年1月-3月\n参加者: 財務省、内閣府、経済産業省の幹部\n内部議論: \n- 財務省: 増税は必要だが時期を慎重に検討\n- 内閣府: 経済への影響を懸念\n- 経産省: 企業への負担増を問題視\n職員の率直な意見: \n「現政権の支持率低下を考慮すると、この時期の増税は政治的リスクが高い」\n「経済回復の兆しが見えてから実施すべき」\n最終案: 2025年10月実施を検討中",
+      "response": "内部審議保護の観点から不開示事由に該当する可能性が高い。率直な意見交換を抑制し、意思決定の中立性を損なう可能性がある。ただし、政策の性質上、一定の透明性も必要。",
+      "model": "unknown",
+      "criteria": "overall quality"
+    },
+    {
+      "item_id": "6bf18560-b532-4ed9-ba8f-e6b5b205b302",
+      "status": "success",
+      "evaluation_type": "single",
+      "processed_at": "2025-09-20T00:05:47.331247",
+      "processing_duration": 22.993072748184204,
+      "result": {
+        "score": 2.9,
+        "reasoning": "The response demonstrates basic understanding of information disclosure law principles but lacks the depth and comprehensiveness expected for a thorough legal evaluation. While it correctly identifies the tension between administrative protection and public interest, it fails to provide detailed analysis of specific information categories or actionable guidance for decision-making.",
+        "confidence": 0.8225,
+        "metadata": {
+          "multi_criteria": true,
+          "criteria_count": 7,
+          "individual_scores": {
+            "accuracy": {
+              "score": 3,
+              "reasoning": "The response correctly identifies key concepts like administrative operation protection and public interest considerations, which are relevant to Japan's Freedom of Information Act. However, it lacks specific legal citations or detailed analysis of which exact non-disclosure provisions might apply to each type of information presented."
+            },
+            "completeness": {
+              "score": 2,
+              "reasoning": "The response is quite brief and fails to comprehensively address the different categories of information provided. It doesn't specifically analyze each element (audit findings, future audit plans, improvement guidance plans) against relevant non-disclosure criteria. Missing detailed evaluation of specific legal provisions and their applicability."
+            },
+            "relevance": {
+              "score": 4,
+              "reasoning": "The response directly addresses the question about non-disclosure eligibility under information disclosure law. It focuses on the core issue of balancing administrative protection against public interest, which is central to the evaluation requested."
+            },
+            "clarity": {
+              "score": 3,
+              "reasoning": "The response is generally understandable but quite concise. The language is clear but lacks detailed explanation of the reasoning process. The balance between administrative protection and public interest is mentioned but not thoroughly explained."
+            },
+            "helpfulness": {
+              "score": 2,
+              "reasoning": "While the response provides a general direction, it lacks practical guidance for decision-making. It doesn't offer specific recommendations about which parts should be disclosed or withheld, nor does it provide a framework for making such determinations."
+            },
+            "coherence": {
+              "score": 3,
+              "reasoning": "The response presents a logical flow from identifying potential non-disclosure grounds to acknowledging the need for public interest consideration. However, the brevity limits the development of a more comprehensive logical argument."
+            },
+            "appropriateness": {
+              "score": 4,
+              "reasoning": "The tone and style are appropriate for a legal/administrative analysis. The language is professional and suitable for discussing information disclosure law matters. The formal approach matches the academic/professional context of the question."
+            }
+          }
+        }
+      },
+      "metadata": {
+        "source_line": 6
+      },
+      "prompt": "以下の情報について、情報公開法に基づく不開示事由該当性を評価してください。\n\n監査対象: 某市の公共事業費使用状況\n監査期間: 2023年度\n監査手法: 書類調査、現地確認、関係者ヒアリング\n発見事項: \n- 不適切な支出: 3件（総額500万円）\n- 手続き不備: 5件\n- 改善要望: 8項目\n今後の監査計画: \n- 重点監査対象: 建設業者3社\n- 監査スケジュール: 月次監査実施\n- 監査員配置: 2名常駐\n改善指導計画: 来月から段階的実施",
+      "response": "行政運営保護の観点から不開示事由に該当する可能性が高い。監査の有効性を損なう可能性があるが、公共の利益の観点から一定の開示も考慮される。",
+      "model": "unknown",
+      "criteria": "overall quality"
+    },
+    {
+      "item_id": "cf8ecdae-a7aa-42cd-b583-a86e0a2c69a1",
+      "status": "success",
+      "evaluation_type": "single",
+      "processed_at": "2025-09-20T00:06:15.062800",
+      "processing_duration": 27.729780197143555,
+      "result": {
+        "score": 3.0,
+        "reasoning": "Error parsing multi-criteria response: Could not extract valid JSON from response",
+        "confidence": 0.1,
+        "metadata": {
+          "multi_criteria": true,
+          "criteria_count": 1,
+          "individual_scores": {
+            "overall_quality": {
+              "score": 3,
+              "reasoning": "Failed to parse multi-criteria evaluation: Could not extract valid JSON from response. Raw response available in metadata."
+            }
+          }
+        }
+      },
+      "metadata": {
+        "source_line": 7
+      },
+      "prompt": "以下の情報について、情報公開法に基づく不開示事由該当性を評価してください。\n\n政策名: デジタル庁の行政DX推進計画\n概要: 行政手続きのデジタル化を推進\n対象期間: 2024年-2026年\n予算: 総額1000億円\n主要施策: \n- マイナンバーカード普及促進\n- 行政手続きオンライン化\n- データ連携基盤整備\n進捗状況: 計画通り進行中\n成果指標: オンライン利用率80%達成\n今後の予定: 2025年から本格運用開始",
+      "response": "いずれの不開示事由にも該当せず、透明性の観点から開示が適切。公共政策の一般的な情報で、機密性の高い情報は含まれていない。",
+      "model": "unknown",
+      "criteria": "overall quality"
+    },
+    {
+      "item_id": "1f60ac08-471b-428b-9a78-e287b305afa5",
+      "status": "success",
+      "evaluation_type": "single",
+      "processed_at": "2025-09-20T00:06:32.651853",
+      "processing_duration": 17.58809208869934,
+      "result": {
+        "score": 3.0,
+        "reasoning": "Error parsing multi-criteria response: Could not extract valid JSON from response",
+        "confidence": 0.1,
+        "metadata": {
+          "multi_criteria": true,
+          "criteria_count": 1,
+          "individual_scores": {
+            "overall_quality": {
+              "score": 3,
+              "reasoning": "Failed to parse multi-criteria evaluation: Could not extract valid JSON from response. Raw response available in metadata."
+            }
+          }
+        }
+      },
+      "metadata": {
+        "source_line": 8
+      },
+      "prompt": "以下の情報について、情報公開法に基づく不開示事由該当性を評価してください。\n\n案件名: 公共施設建設に関する入札結果\n入札参加企業: 5社\n落札企業: 株式会社建設A（落札価格: 5億円）\n技術評価: 優秀\n工期: 24ヶ月\n【機密部分】\n- 落札企業の内部コスト構造\n- 技術提案の詳細内容\n- 競合他社の入札価格\n- 審査員の個人評価コメント\n【公開部分】\n- 入札結果の概要\n- 工期と予算\n- 建設予定地",
+      "response": "法人情報保護の観点から不開示事由に該当するが、部分開示により対応可能。一部に機密情報が含まれるが、部分開示により公共の利益を図ることが可能。",
+      "model": "unknown",
+      "criteria": "overall quality"
+    }
+  ]
+}

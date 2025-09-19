@@ -1,0 +1,129 @@
+{
+  "test_summary": {
+    "total_samples": 8,
+    "matches": 7,
+    "match_rate": 87.5
+  },
+  "detailed_results": [
+    {
+      "sample_id": "sample_001",
+      "title": "個人情報保護 - 医療記録",
+      "expected_score": 1,
+      "actual_score": 1,
+      "scores": {
+        "personal_information_protection": 1,
+        "corporate_information_protection": 5,
+        "national_security_concerns": 5,
+        "public_safety_and_order": 5,
+        "internal_deliberation_protection": 5,
+        "administrative_operations_protection": 5
+      },
+      "match": true
+    },
+    {
+      "sample_id": "sample_002",
+      "title": "法人情報保護 - 企業の営業秘密",
+      "expected_score": 1,
+      "actual_score": 1,
+      "scores": {
+        "personal_information_protection": 5,
+        "corporate_information_protection": 1,
+        "national_security_concerns": 5,
+        "public_safety_and_order": 5,
+        "internal_deliberation_protection": 5,
+        "administrative_operations_protection": 5
+      },
+      "match": true
+    },
+    {
+      "sample_id": "sample_003",
+      "title": "国家安全保障 - 防衛装備情報",
+      "expected_score": 1,
+      "actual_score": 1,
+      "scores": {
+        "personal_information_protection": 5,
+        "corporate_information_protection": 5,
+        "national_security_concerns": 1,
+        "public_safety_and_order": 5,
+        "internal_deliberation_protection": 5,
+        "administrative_operations_protection": 5
+      },
+      "match": true
+    },
+    {
+      "sample_id": "sample_004",
+      "title": "公共安全 - 捜査情報",
+      "expected_score": 1,
+      "actual_score": 1,
+      "scores": {
+        "personal_information_protection": 5,
+        "corporate_information_protection": 5,
+        "national_security_concerns": 5,
+        "public_safety_and_order": 1,
+        "internal_deliberation_protection": 5,
+        "administrative_operations_protection": 5
+      },
+      "match": true
+    },
+    {
+      "sample_id": "sample_005",
+      "title": "内部審議 - 政策決定過程",
+      "expected_score": 2,
+      "actual_score": 2,
+      "scores": {
+        "personal_information_protection": 5,
+        "corporate_information_protection": 5,
+        "national_security_concerns": 5,
+        "public_safety_and_order": 5,
+        "internal_deliberation_protection": 2,
+        "administrative_operations_protection": 5
+      },
+      "match": true
+    },
+    {
+      "sample_id": "sample_006",
+      "title": "行政運営 - 監査情報",
+      "expected_score": 2,
+      "actual_score": 2,
+      "scores": {
+        "personal_information_protection": 5,
+        "corporate_information_protection": 5,
+        "national_security_concerns": 5,
+        "public_safety_and_order": 5,
+        "internal_deliberation_protection": 5,
+        "administrative_operations_protection": 2
+      },
+      "match": true
+    },
+    {
+      "sample_id": "sample_007",
+      "title": "開示可能 - 一般政策情報",
+      "expected_score": 5,
+      "actual_score": 5,
+      "scores": {
+        "personal_information_protection": 5,
+        "corporate_information_protection": 5,
+        "national_security_concerns": 5,
+        "public_safety_and_order": 5,
+        "internal_deliberation_protection": 5,
+        "administrative_operations_protection": 5
+      },
+      "match": true
+    },
+    {
+      "sample_id": "sample_008",
+      "title": "部分開示対象 - 混合情報",
+      "expected_score": 3,
+      "actual_score": 2,
+      "scores": {
+        "personal_information_protection": 5,
+        "corporate_information_protection": 2,
+        "national_security_concerns": 5,
+        "public_safety_and_order": 5,
+        "internal_deliberation_protection": 5,
+        "administrative_operations_protection": 2
+      },
+      "match": false
+    }
+  ]
+}
