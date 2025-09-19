@@ -1,0 +1,147 @@
+{
+  "name": "Academic Evaluation Criteria",
+  "description": "Comprehensive criteria for evaluating academic and research content",
+  "criteria": [
+    {
+      "name": "accuracy",
+      "description": "Factual correctness and truthfulness of the response",
+      "criterion_type": "factual",
+      "weight": 1.0,
+      "evaluation_prompt": "Evaluate the factual accuracy of the response. Are the claims correct, well-supported, and verifiable?",
+      "examples": {
+        "1": "Contains major factual errors or misinformation",
+        "2": "Some factual inaccuracies present",
+        "3": "Mostly accurate with minor errors",
+        "4": "Accurate with no significant factual issues",
+        "5": "Completely accurate and well-supported with evidence"
+      },
+      "domain_specific": false,
+      "requires_context": false,
+      "metadata": {
+        "importance": "high",
+        "category": "content_quality"
+      }
+    },
+    {
+      "name": "completeness",
+      "description": "Thoroughness and comprehensiveness of coverage",
+      "criterion_type": "qualitative",
+      "weight": 1.0,
+      "evaluation_prompt": "Assess how completely the response addresses all aspects of the original question or prompt. Does it cover all necessary points?",
+      "examples": {
+        "1": "Addresses very few aspects of the question",
+        "2": "Covers some but misses important aspects",
+        "3": "Addresses most aspects adequately",
+        "4": "Comprehensive coverage with minor gaps",
+        "5": "Thoroughly addresses all aspects with appropriate depth"
+      },
+      "domain_specific": false,
+      "requires_context": true,
+      "metadata": {
+        "importance": "high",
+        "category": "content_quality"
+      }
+    },
+    {
+      "name": "clarity",
+      "description": "Clarity of expression and ease of understanding",
+      "criterion_type": "linguistic",
+      "weight": 1.0,
+      "evaluation_prompt": "Evaluate the clarity and understandability of the response. Is it well-articulated and easy to follow?",
+      "examples": {
+        "1": "Confusing, unclear, or difficult to understand",
+        "2": "Somewhat unclear with areas of confusion",
+        "3": "Generally clear with minor unclear points",
+        "4": "Clear and well-articulated throughout",
+        "5": "Exceptionally clear, concise, and well-explained"
+      },
+      "domain_specific": false,
+      "requires_context": false,
+      "metadata": {
+        "importance": "medium",
+        "category": "presentation"
+      }
+    },
+    {
+      "name": "relevance",
+      "description": "Relevance to the original prompt or question",
+      "criterion_type": "contextual",
+      "weight": 1.0,
+      "evaluation_prompt": "Assess how relevant the response is to the original question or prompt. Does it stay on topic?",
+      "examples": {
+        "1": "Largely irrelevant or off-topic",
+        "2": "Somewhat relevant but with significant tangents",
+        "3": "Generally relevant with minor deviations",
+        "4": "Highly relevant and on-topic",
+        "5": "Perfectly relevant and directly addresses the prompt"
+      },
+      "domain_specific": false,
+      "requires_context": true,
+      "metadata": {
+        "importance": "high",
+        "category": "content_quality"
+      }
+    },
+    {
+      "name": "helpfulness",
+      "description": "Practical value and usefulness to the reader",
+      "criterion_type": "qualitative",
+      "weight": 1.0,
+      "evaluation_prompt": "Evaluate how helpful and useful this response would be for someone seeking this information. Does it provide actionable insights?",
+      "examples": {
+        "1": "Not helpful or potentially misleading",
+        "2": "Limited helpfulness",
+        "3": "Moderately helpful",
+        "4": "Very helpful and useful",
+        "5": "Exceptionally helpful with actionable insights"
+      },
+      "domain_specific": false,
+      "requires_context": true,
+      "metadata": {
+        "importance": "medium",
+        "category": "utility"
+      }
+    },
+    {
+      "name": "coherence",
+      "description": "Logical flow and consistency of ideas",
+      "criterion_type": "structural",
+      "weight": 1.0,
+      "evaluation_prompt": "Assess the logical flow and coherence of ideas in the response. Are the arguments well-structured?",
+      "examples": {
+        "1": "Incoherent or contradictory",
+        "2": "Some logical inconsistencies",
+        "3": "Generally coherent with minor issues",
+        "4": "Logically consistent and well-structured",
+        "5": "Perfectly coherent with excellent logical flow"
+      },
+      "domain_specific": false,
+      "requires_context": false,
+      "metadata": {
+        "importance": "medium",
+        "category": "presentation"
+      }
+    },
+    {
+      "name": "appropriateness",
+      "description": "Suitability of tone, style, and content for academic context",
+      "criterion_type": "ethical",
+      "weight": 1.0,
+      "evaluation_prompt": "Evaluate whether the tone, style, and content are appropriate for an academic context. Is it professional and suitable?",
+      "examples": {
+        "1": "Inappropriate tone or content for academic context",
+        "2": "Somewhat inappropriate for academic context",
+        "3": "Generally appropriate",
+        "4": "Well-suited for academic context",
+        "5": "Perfectly appropriate and well-calibrated for academic use"
+      },
+      "domain_specific": true,
+      "requires_context": true,
+      "metadata": {
+        "importance": "medium",
+        "category": "presentation",
+        "context": "academic"
+      }
+    }
+  ]
+}

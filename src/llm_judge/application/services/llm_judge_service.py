@@ -19,6 +19,8 @@ from ...infrastructure.clients.multi_criteria_client import (
     MultiCriteriaBedrockClient,
     MockMultiCriteriaClient,
 )
+from ...infrastructure.persistence.persistence_service import PersistenceServiceImpl
+from ...domain.persistence.models import PersistenceConfig
 from ...infrastructure.resilience.fallback_manager import (
     get_fallback_manager,
     FallbackResponse,
@@ -65,6 +67,18 @@ class LLMJudge:
         else:
             self.judge_model = judge_model
 
+        # Initialize persistence service
+        self.persistence_service = None
+        if self.config.persistence_enabled:
+            persistence_config = PersistenceConfig(
+                storage_path=self.config.persistence_storage_path,
+                cache_enabled=self.config.persistence_cache_enabled,
+                cache_ttl_hours=self.config.persistence_cache_ttl_hours,
+                max_cache_size=self.config.persistence_max_cache_size,
+                auto_cleanup=self.config.persistence_auto_cleanup,
+            )
+            self.persistence_service = PersistenceServiceImpl(persistence_config)
+
         # Initialize clients (will be created when needed)
         self._openai_client = None
         self._anthropic_client = None
@@ -93,7 +107,10 @@ class LLMJudge:
             self._use_real_llm = False
 
         # Always initialize mock client for fallback
-        from ...infrastructure.clients.multi_criteria_client import MockMultiCriteriaClient
+        from ...infrastructure.clients.multi_criteria_client import (
+            MockMultiCriteriaClient,
+        )
+
         self._multi_criteria_mock = MockMultiCriteriaClient()
 
         # Log initialization (without exposing API keys)
@@ -346,6 +363,8 @@ Respond in JSON: {{"winner": "A"/"B"/"tie", "reasoning": "explanation", "confide
         candidate: CandidateResponse,
         criteria: Optional[EvaluationCriteria] = None,
         criteria_type: Optional[str] = None,
+        custom_criteria: Optional[EvaluationCriteria] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> MultiCriteriaResult:
         """
         Perform comprehensive multi-criteria evaluation.
@@ -354,18 +373,37 @@ Respond in JSON: {{"winner": "A"/"B"/"tie", "reasoning": "explanation", "confide
             candidate: The response to evaluate
             criteria: Custom evaluation criteria (if None, uses default)
             criteria_type: Type of default criteria to use ("comprehensive", "basic", "technical", "creative")
+            custom_criteria: Pre-configured criteria with custom weights (takes precedence over criteria)
 
         Returns:
             MultiCriteriaResult with detailed scores across all criteria
         """
-        # Use default criteria if none provided
-        if criteria is None:
+        # Use custom criteria if provided, otherwise use default criteria
+        if custom_criteria is not None:
+            criteria = custom_criteria
+        elif criteria is None:
             criteria_type = criteria_type or self.config.default_criteria_type
             criteria = self._get_default_criteria(criteria_type)
 
         logging.info(
             f"Starting multi-criteria evaluation with {len(criteria.criteria)} criteria"
         )
+
+        # Check cache first if persistence is enabled
+        if self.persistence_service:
+            import hashlib
+
+            criteria_hash = hashlib.sha256(str(criteria).encode()).hexdigest()
+
+            cached_result = await self.persistence_service.get_evaluation(
+                candidate.prompt,
+                candidate.response,
+                criteria_hash,
+                self.judge_model,
+            )
+            if cached_result:
+                logging.info("Returning cached evaluation result")
+                return cached_result.result
 
         if self._use_real_llm:
             await self._ensure_clients_initialized()
@@ -416,6 +454,24 @@ Respond in JSON: {{"winner": "A"/"B"/"tie", "reasoning": "explanation", "confide
                 logging.info(
                     f"Multi-criteria evaluation completed: {result.aggregated.overall_score:.1f}/5 across {len(result.criterion_scores)} criteria"
                 )
+
+                # Save result to persistence if enabled
+                if self.persistence_service:
+                    import hashlib
+                    import time
+
+                    criteria_hash = hashlib.sha256(str(criteria).encode()).hexdigest()
+
+                    await self.persistence_service.save_evaluation(
+                        candidate=candidate,
+                        result=result,
+                        criteria_hash=criteria_hash,
+                        judge_model=self.judge_model,
+                        provider=self.config.default_provider,
+                        evaluation_time_ms=int(time.time() * 1000),  # Simple timestamp
+                        metadata=metadata,
+                    )
+
                 return result
 
             except Exception as e:

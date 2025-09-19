@@ -41,6 +41,26 @@ class LLMConfig:
     log_level: str = "INFO"
     default_criteria_type: str = "comprehensive"
 
+    # Criteria weight configuration
+    criteria_weights: Optional[str] = (
+        None  # Format: "criterion1:weight1,criterion2:weight2"
+    )
+    use_equal_weights: bool = True  # Default to equal weights
+
+    # Custom criteria configuration
+    custom_criteria: Optional[str] = (
+        None  # Format: "name:description:type:weight,name2:description2:type2:weight2"
+    )
+    criteria_file: Optional[str] = None  # Path to JSON file containing custom criteria
+
+    # Data persistence configuration
+    persistence_enabled: bool = True
+    persistence_storage_path: str = "./data"
+    persistence_cache_enabled: bool = True
+    persistence_cache_ttl_hours: int = 24
+    persistence_max_cache_size: int = 1000
+    persistence_auto_cleanup: bool = True
+
     # Provider-specific timeout configuration
     openai_request_timeout: int = 30
     anthropic_request_timeout: int = 30

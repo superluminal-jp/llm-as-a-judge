@@ -19,6 +19,16 @@ from ...application.services.llm_judge_service import (
 )
 from ...infrastructure.config.config import LLMConfig, load_config
 from ...domain.evaluation.criteria import DefaultCriteria
+from ...domain.evaluation.weight_config import WeightConfigParser, CriteriaWeightApplier
+from ...domain.evaluation.custom_criteria import (
+    CustomCriteriaParser,
+    CustomCriteriaBuilder,
+    get_available_criterion_types,
+    save_criteria_template,
+    create_criteria_template,
+)
+from ...infrastructure.persistence.persistence_service import PersistenceServiceImpl
+from ...domain.persistence.models import PersistenceConfig
 from .batch_commands import add_batch_commands
 from .multi_criteria_display import MultiCriteriaDisplayFormatter
 
@@ -45,6 +55,24 @@ Examples:
   
   # Use technical criteria for technical content
   llm-judge evaluate "Explain ML" "Machine learning is..." --criteria-type technical
+  
+  # Use custom criteria weights
+  llm-judge evaluate "What is AI?" "AI is artificial intelligence" --criteria-weights "accuracy:0.4,clarity:0.3,helpfulness:0.3"
+  
+  # Use equal weights for all criteria
+  llm-judge evaluate "What is AI?" "AI is artificial intelligence" --equal-weights
+  
+  # Use custom criteria definition
+  llm-judge evaluate "What is AI?" "AI is artificial intelligence" --custom-criteria "accuracy:Factual correctness:factual:0.4,clarity:How clear the response is:linguistic:0.3"
+  
+  # Use criteria from file
+  llm-judge evaluate "What is AI?" "AI is artificial intelligence" --criteria-file ./my-criteria.json
+  
+  # List available criteria types
+  llm-judge evaluate --list-criteria-types
+  
+  # Create criteria template
+  llm-judge create-criteria-template my-criteria.json --name "Academic Evaluation" --description "Criteria for academic content"
   
   # Compare two responses
   llm-judge compare "Explain ML" "Basic explanation" "Detailed explanation" --model-a gpt-4 --model-b claude-3
@@ -82,8 +110,8 @@ Examples:
 
     # Evaluate command
     eval_parser = subparsers.add_parser("evaluate", help="Evaluate a single response")
-    eval_parser.add_argument("prompt", help="The prompt/question")
-    eval_parser.add_argument("response", help="The response to evaluate")
+    eval_parser.add_argument("prompt", nargs="?", help="The prompt/question")
+    eval_parser.add_argument("response", nargs="?", help="The response to evaluate")
     eval_parser.add_argument(
         "--criteria",
         default="overall quality",
@@ -100,6 +128,31 @@ Examples:
         action="store_true",
         help="Show detailed multi-criteria breakdown",
     )
+    eval_parser.add_argument(
+        "--criteria-weights",
+        type=str,
+        help="Custom criteria weights in format 'criterion1:weight1,criterion2:weight2' (e.g., 'accuracy:0.3,clarity:0.2,helpfulness:0.5')",
+    )
+    eval_parser.add_argument(
+        "--equal-weights",
+        action="store_true",
+        help="Use equal weights for all criteria (overrides default weights)",
+    )
+    eval_parser.add_argument(
+        "--custom-criteria",
+        type=str,
+        help="Custom criteria definition in format 'name:description:type:weight,name2:description2:type2:weight2' (e.g., 'accuracy:Factual correctness:factual:0.4,clarity:How clear the response is:linguistic:0.3')",
+    )
+    eval_parser.add_argument(
+        "--criteria-file",
+        type=Path,
+        help="Path to JSON file containing custom criteria definitions",
+    )
+    eval_parser.add_argument(
+        "--list-criteria-types",
+        action="store_true",
+        help="List available criteria types and exit",
+    )
 
     # Compare command
     compare_parser = subparsers.add_parser("compare", help="Compare two responses")
@@ -112,7 +165,90 @@ Examples:
     # Add batch commands
     add_batch_commands(subparsers)
 
+    # Add criteria template command
+    template_parser = subparsers.add_parser(
+        "create-criteria-template", help="Create a criteria template file"
+    )
+    template_parser.add_argument(
+        "output_file", type=Path, help="Output file path for the template"
+    )
+    template_parser.add_argument(
+        "--name",
+        default="Custom Evaluation Criteria",
+        help="Name for the criteria set (default: 'Custom Evaluation Criteria')",
+    )
+    template_parser.add_argument(
+        "--description",
+        default="Custom evaluation criteria for specific use case",
+        help="Description for the criteria set",
+    )
+
+    # Add data management commands
+    data_parser = subparsers.add_parser(
+        "data", help="Data persistence management commands"
+    )
+    data_subparsers = data_parser.add_subparsers(
+        dest="data_command", help="Data management subcommands"
+    )
+
+    # List evaluations command
+    list_parser = data_subparsers.add_parser(
+        "list", help="List stored evaluation results"
+    )
+    list_parser.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Maximum number of results to display (default: 10)",
+    )
+    list_parser.add_argument(
+        "--format",
+        choices=["table", "json"],
+        default="table",
+        help="Output format (default: table)",
+    )
+
+    # Export evaluations command
+    export_parser = data_subparsers.add_parser(
+        "export", help="Export evaluation results to file"
+    )
+    export_parser.add_argument(
+        "output_file", type=Path, help="Output file path (JSON format)"
+    )
+    export_parser.add_argument(
+        "--limit", type=int, help="Maximum number of results to export (default: all)"
+    )
+
+    # Clean cache command
+    clean_parser = data_subparsers.add_parser(
+        "clean-cache", help="Clean evaluation cache"
+    )
+    clean_parser.add_argument(
+        "--force", action="store_true", help="Force cleanup without confirmation"
+    )
+
     return parser
+
+
+def list_criteria_types():
+    """List available criteria types and exit."""
+    print("Available Criteria Types:")
+    print("=" * 50)
+
+    criterion_types = get_available_criterion_types()
+    for criterion_type in criterion_types:
+        print(f"  - {criterion_type}")
+
+    print("\nExample Usage:")
+    print(
+        "  --custom-criteria 'accuracy:Factual correctness:factual:0.4,clarity:How clear the response is:linguistic:0.3'"
+    )
+    print("  --criteria-file ./my-criteria.json")
+
+    print("\nTo create a criteria template file:")
+    print(
+        "  python -c \"from src.llm_judge.domain.evaluation.custom_criteria import save_criteria_template; save_criteria_template('template.json')\""
+    )
 
 
 def load_cli_config(
@@ -141,6 +277,15 @@ def load_cli_config(
 
 async def evaluate_command(args: argparse.Namespace) -> Dict[str, Any]:
     """Execute the evaluate command."""
+    # Check if list-criteria-types is requested
+    if hasattr(args, "list_criteria_types") and args.list_criteria_types:
+        list_criteria_types()
+        return {}
+
+    # Validate required arguments for normal evaluation
+    if not args.prompt or not args.response:
+        raise CLIError("Both prompt and response are required for evaluation")
+
     config = load_cli_config(args.config, args.provider, args.judge_model)
 
     candidate = CandidateResponse(
@@ -152,8 +297,116 @@ async def evaluate_command(args: argparse.Namespace) -> Dict[str, Any]:
     try:
         # Use multi-criteria evaluation with specified criteria type
         criteria_type = getattr(args, "criteria_type", None)
+
+        # Handle custom criteria and weight configuration
+        custom_criteria = None
+
+        # Check for custom criteria definition (CLI args override config file)
+        custom_criteria_string = (
+            getattr(args, "custom_criteria", None) or config.custom_criteria
+        )
+        criteria_file_path = getattr(args, "criteria_file", None) or (
+            Path(config.criteria_file) if config.criteria_file else None
+        )
+
+        if custom_criteria_string:
+            try:
+                criteria_definitions = CustomCriteriaParser.parse_criteria_string(
+                    custom_criteria_string
+                )
+                builder = CustomCriteriaBuilder()
+                for cd in criteria_definitions:
+                    builder.add_criterion(
+                        name=cd.name,
+                        description=cd.description,
+                        criterion_type=cd.criterion_type,
+                        weight=cd.weight,
+                        evaluation_prompt=cd.evaluation_prompt,
+                        examples=cd.examples,
+                        domain_specific=cd.domain_specific,
+                        requires_context=cd.requires_context,
+                        metadata=cd.metadata,
+                    )
+                custom_criteria = builder.build(normalize_weights=False)
+            except ValueError as e:
+                raise CLIError(f"Invalid custom criteria: {e}")
+
+        elif criteria_file_path:
+            try:
+                criteria_definitions = CustomCriteriaParser.parse_criteria_file(
+                    criteria_file_path
+                )
+                builder = CustomCriteriaBuilder()
+                for cd in criteria_definitions:
+                    builder.add_criterion(
+                        name=cd.name,
+                        description=cd.description,
+                        criterion_type=cd.criterion_type,
+                        weight=cd.weight,
+                        evaluation_prompt=cd.evaluation_prompt,
+                        examples=cd.examples,
+                        domain_specific=cd.domain_specific,
+                        requires_context=cd.requires_context,
+                        metadata=cd.metadata,
+                    )
+                custom_criteria = builder.build(normalize_weights=False)
+            except (ValueError, FileNotFoundError) as e:
+                raise CLIError(f"Error loading criteria file: {e}")
+
+        # Only apply weight configuration if no custom criteria are defined
+        if custom_criteria is None:
+            # Check for weight configuration from CLI args or config file
+            criteria_weights = (
+                getattr(args, "criteria_weights", None) or config.criteria_weights
+            )
+            use_equal_weights = (
+                getattr(args, "equal_weights", False) or config.use_equal_weights
+            )
+
+            if criteria_weights:
+                try:
+                    weight_config = WeightConfigParser.parse_weight_string(
+                        criteria_weights
+                    )
+                    # Get base criteria
+                    if criteria_type == "comprehensive":
+                        base_criteria = DefaultCriteria.comprehensive()
+                    elif criteria_type == "basic":
+                        base_criteria = DefaultCriteria.basic()
+                    elif criteria_type == "technical":
+                        base_criteria = DefaultCriteria.technical()
+                    elif criteria_type == "creative":
+                        base_criteria = DefaultCriteria.creative()
+                    else:
+                        base_criteria = DefaultCriteria.comprehensive()  # Default
+
+                    custom_criteria = CriteriaWeightApplier.apply_weights(
+                        base_criteria, weight_config
+                    )
+                except ValueError as e:
+                    raise CLIError(f"Invalid criteria weights: {e}")
+
+            elif use_equal_weights:
+                # Apply equal weights
+                if criteria_type == "comprehensive":
+                    base_criteria = DefaultCriteria.comprehensive()
+                elif criteria_type == "basic":
+                    base_criteria = DefaultCriteria.basic()
+                elif criteria_type == "technical":
+                    base_criteria = DefaultCriteria.technical()
+                elif criteria_type == "creative":
+                    base_criteria = DefaultCriteria.creative()
+                else:
+                    base_criteria = DefaultCriteria.comprehensive()  # Default
+
+                criteria_names = [c.name for c in base_criteria.criteria]
+                weight_config = WeightConfigParser.create_equal_weights(criteria_names)
+                custom_criteria = CriteriaWeightApplier.apply_weights(
+                    base_criteria, weight_config
+                )
+
         multi_result = await judge.evaluate_multi_criteria(
-            candidate, criteria_type=criteria_type
+            candidate, criteria_type=criteria_type, custom_criteria=custom_criteria
         )
         return {
             "type": "multi_criteria_evaluation",
@@ -267,6 +520,10 @@ async def main():
         if args.command == "evaluate":
             result = await evaluate_command(args)
 
+            # Handle list-criteria-types case
+            if not result:
+                return
+
             if result["type"] == "multi_criteria_evaluation":
                 # Use multi-criteria display formatter
                 formatter = MultiCriteriaDisplayFormatter()
@@ -282,10 +539,37 @@ async def main():
             result = await compare_command(args)
             output = format_comparison_output(result, args.output)
             print(output)
+        elif args.command == "create-criteria-template":
+            # Handle criteria template creation
+            try:
+                template = create_criteria_template()
+                template["name"] = args.name
+                template["description"] = args.description
+
+                with open(args.output_file, "w", encoding="utf-8") as f:
+                    json.dump(template, f, indent=2, ensure_ascii=False)
+
+                print(f"Criteria template created: {args.output_file}")
+                print(
+                    "Edit the file to customize your criteria, then use with --criteria-file"
+                )
+            except Exception as e:
+                raise CLIError(f"Error creating template: {e}")
         elif args.command in ["batch", "create-sample-batch"]:
             # Handle batch commands asynchronously
             exit_code = await args.func(args)
             sys.exit(exit_code)
+        elif args.command == "data":
+            # Handle data management commands
+            if args.data_command == "list":
+                await data_list_command(args)
+            elif args.data_command == "export":
+                await data_export_command(args)
+            elif args.data_command == "clean-cache":
+                await data_clean_cache_command(args)
+            else:
+                print(f"Unknown data command: {args.data_command}", file=sys.stderr)
+                sys.exit(1)
         else:
             raise CLIError(f"Unknown command: {args.command}")
 
@@ -303,6 +587,137 @@ async def main():
         else:
             print(f"Unexpected error: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+async def data_list_command(args) -> None:
+    """Handle data list command."""
+    try:
+        # Initialize persistence service
+        config = load_config(args.config)
+        persistence_config = PersistenceConfig(
+            storage_path=config.persistence_storage_path,
+            cache_enabled=config.persistence_cache_enabled,
+            cache_ttl_hours=config.persistence_cache_ttl_hours,
+            max_cache_size=config.persistence_max_cache_size,
+            auto_cleanup=config.persistence_auto_cleanup,
+        )
+        persistence_service = PersistenceServiceImpl(persistence_config)
+
+        # Get evaluations
+        evaluations = await persistence_service.list_evaluations(limit=args.limit)
+
+        if args.format == "json":
+            import json
+
+            data = []
+            for eval_record in evaluations:
+                data.append(
+                    {
+                        "id": eval_record.id,
+                        "prompt": eval_record.candidate.prompt,
+                        "response": eval_record.candidate.response,
+                        "overall_score": eval_record.result.aggregated.overall_score,
+                        "evaluated_at": eval_record.evaluated_at.isoformat(),
+                        "judge_model": eval_record.judge_model,
+                    }
+                )
+            print(json.dumps(data, indent=2, ensure_ascii=False))
+        else:
+            # Table format
+            print(f"{'ID':<36} {'Score':<6} {'Model':<15} {'Evaluated At':<20}")
+            print("-" * 80)
+            for eval_record in evaluations:
+                print(
+                    f"{eval_record.id:<36} "
+                    f"{eval_record.result.aggregated.overall_score:<6.1f} "
+                    f"{eval_record.judge_model:<15} "
+                    f"{eval_record.evaluated_at.strftime('%Y-%m-%d %H:%M:%S'):<20}"
+                )
+
+    except Exception as e:
+        raise CLIError(f"Error listing evaluations: {e}")
+
+
+async def data_export_command(args) -> None:
+    """Handle data export command."""
+    try:
+        # Initialize persistence service
+        config = load_config(args.config)
+        persistence_config = PersistenceConfig(
+            storage_path=config.persistence_storage_path,
+            cache_enabled=config.persistence_cache_enabled,
+            cache_ttl_hours=config.persistence_cache_ttl_hours,
+            max_cache_size=config.persistence_max_cache_size,
+            auto_cleanup=config.persistence_auto_cleanup,
+        )
+        persistence_service = PersistenceServiceImpl(persistence_config)
+
+        # Get evaluations
+        evaluations = await persistence_service.list_evaluations(limit=args.limit)
+
+        # Export to JSON
+        import json
+
+        data = []
+        for eval_record in evaluations:
+            data.append(
+                {
+                    "id": eval_record.id,
+                    "candidate": {
+                        "prompt": eval_record.candidate.prompt,
+                        "response": eval_record.candidate.response,
+                    },
+                    "result": {
+                        "overall_score": eval_record.result.aggregated.overall_score,
+                        "criterion_scores": {
+                            name: score.score
+                            for name, score in eval_record.result.criterion_scores.items()
+                        },
+                    },
+                    "metadata": {
+                        "evaluated_at": eval_record.evaluated_at.isoformat(),
+                        "judge_model": eval_record.judge_model,
+                        "provider": eval_record.provider,
+                        "criteria_hash": eval_record.criteria_hash,
+                    },
+                }
+            )
+
+        with open(args.output_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+        print(f"Exported {len(data)} evaluations to {args.output_file}")
+
+    except Exception as e:
+        raise CLIError(f"Error exporting evaluations: {e}")
+
+
+async def data_clean_cache_command(args) -> None:
+    """Handle data clean-cache command."""
+    try:
+        # Initialize persistence service
+        config = load_config(args.config)
+        persistence_config = PersistenceConfig(
+            storage_path=config.persistence_storage_path,
+            cache_enabled=config.persistence_cache_enabled,
+            cache_ttl_hours=config.persistence_cache_ttl_hours,
+            max_cache_size=config.persistence_max_cache_size,
+            auto_cleanup=config.persistence_auto_cleanup,
+        )
+        persistence_service = PersistenceServiceImpl(persistence_config)
+
+        if not args.force:
+            response = input("Are you sure you want to clean the cache? (y/N): ")
+            if response.lower() != "y":
+                print("Cache cleanup cancelled.")
+                return
+
+        # Clean cache
+        await persistence_service.clean_cache()
+        print("Cache cleaned successfully.")
+
+    except Exception as e:
+        raise CLIError(f"Error cleaning cache: {e}")
 
 
 def cli_entry():

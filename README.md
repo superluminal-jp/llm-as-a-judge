@@ -20,6 +20,29 @@ cp .env.example .env
 # CLI Usage - Multi-criteria evaluation (default)
 python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence"
 
+# CLI Usage - Custom criteria weights
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --criteria-weights "accuracy:0.4,clarity:0.3,helpfulness:0.3"
+
+# CLI Usage - Equal weights for all criteria (now the default)
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --equal-weights
+
+# CLI Usage - Custom criteria definition
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --custom-criteria "accuracy:Factual correctness:factual:0.4,clarity:How clear the response is:linguistic:0.3,helpfulness:How useful the response is:qualitative:0.3"
+
+# CLI Usage - Custom criteria from file
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --criteria-file examples/academic_criteria.json
+
+# CLI Usage - List available criteria types
+python -m src.llm_judge evaluate --list-criteria-types
+
+# CLI Usage - Create criteria template
+python -m src.llm_judge create-criteria-template my-criteria.json --name "Academic Evaluation" --description "Criteria for academic content"
+
+# CLI Usage - Data management
+python -m src.llm_judge data list --limit 10 --format table
+python -m src.llm_judge data export results.json --limit 100
+python -m src.llm_judge data clean-cache --force
+
 # CLI Usage - Single-criterion evaluation (legacy)
 python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --single-criterion --criteria "accuracy"
 
@@ -285,7 +308,7 @@ Following the AI Coding Agent Governance Framework, we maintain sophisticated do
 - ✅ Error handling and retry logic
 - ✅ Configuration management
 - ✅ Enhanced CLI interface with evaluation and comparison
-- [ ] Data persistence (Next)
+- ✅ Data persistence
 
 #### Phase 3: Advanced Features
 
@@ -358,9 +381,24 @@ Key Principles:
 ### Evaluation Criteria System
 
 - **7 Default Criteria**: Comprehensive evaluation across multiple dimensions
-- **Weighted Scoring**: Configurable weights for different criteria (accuracy: 20%, completeness: 15%, etc.)
-- **Custom Criteria**: Support for domain-specific evaluation requirements
+- **Equal Weights by Default**: All criteria have equal importance (14.3% each)
+- **Custom Weight Configuration**: Set custom weight ratios via CLI or config file
+- **Flexible Weighting**: Override default equal weights with custom distributions
+- **Custom Criteria Definition**: Define completely custom criteria sets with your own evaluation dimensions
+- **Criteria Templates**: Pre-built templates for academic, technical, and creative evaluations
+- **Interactive Criteria Builder**: Programmatic and CLI-based criteria creation
+- **Criteria File Support**: Load custom criteria from JSON configuration files
 - **Criterion Types**: Factual, qualitative, structural, contextual, linguistic, ethical categories
+
+### Data Persistence & Management
+
+- **Automatic Storage**: All evaluation results are automatically saved to persistent storage
+- **Intelligent Caching**: Built-in caching system with TTL and size limits for performance
+- **Data Export**: Export evaluation results to JSON format for analysis
+- **History Tracking**: View and manage evaluation history with timestamps and metadata
+- **Cache Management**: Clean and manage cache with CLI commands
+- **Storage Configuration**: Configurable storage paths and cache settings
+- **Data Commands**: CLI commands for data management (`data list`, `data export`, `data clean-cache`)
 
 ## Usage Examples
 

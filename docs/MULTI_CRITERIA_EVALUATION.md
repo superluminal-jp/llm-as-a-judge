@@ -6,26 +6,298 @@ The LLM-as-a-Judge system provides comprehensive multi-criteria evaluation by de
 
 ## Default Evaluation Criteria
 
-### 7-Dimension Analysis
+### 7-Dimension Analysis with Equal Weights
 
-The system evaluates responses across these 7 criteria by default:
+The system evaluates responses across these 7 criteria with **equal weights by default**:
 
 | Criterion           | Weight | Scale | Description                                         |
 | ------------------- | ------ | ----- | --------------------------------------------------- |
-| **Accuracy**        | 20%    | 1-5   | Factual correctness and truthfulness of information |
-| **Completeness**    | 15%    | 1-5   | Depth and comprehensiveness of coverage             |
-| **Clarity**         | 15%    | 1-5   | Clarity of expression and ease of understanding     |
-| **Relevance**       | 15%    | 1-5   | Direct relevance to the question asked              |
-| **Helpfulness**     | 15%    | 1-5   | Practical value and usefulness to the reader        |
-| **Coherence**       | 10%    | 1-5   | Logical flow and internal consistency               |
-| **Appropriateness** | 10%    | 1-5   | Tone, style, and contextual appropriateness         |
+| **Accuracy**        | 14.3%  | 1-5   | Factual correctness and truthfulness of information |
+| **Completeness**    | 14.3%  | 1-5   | Depth and comprehensiveness of coverage             |
+| **Clarity**         | 14.3%  | 1-5   | Clarity of expression and ease of understanding     |
+| **Relevance**       | 14.3%  | 1-5   | Direct relevance to the question asked              |
+| **Helpfulness**     | 14.3%  | 1-5   | Practical value and usefulness to the reader        |
+| **Coherence**       | 14.3%  | 1-5   | Logical flow and internal consistency               |
+| **Appropriateness** | 14.3%  | 1-5   | Tone, style, and contextual appropriateness         |
 
 ### Scoring System
 
 - **Scale**: Each criterion is scored from 1-5
-- **Weighting**: Scores are weighted based on importance (accuracy gets 20%, coherence gets 10%)
+- **Weighting**: All criteria have equal importance (14.3% each for comprehensive evaluation)
 - **Aggregation**: Final score is calculated as weighted average across all criteria
 - **Confidence**: Each criterion score includes a confidence level (0-100%)
+
+## Custom Criteria and Weight Configuration
+
+### Overview
+
+By default, the system uses **equal weights** for all criteria in each criteria type. This ensures that no single criterion dominates the evaluation. However, you can customize both the criteria themselves and their weights to create evaluation frameworks tailored to your specific needs.
+
+### Custom Criteria Definition
+
+You can define completely custom criteria sets with your own evaluation dimensions, prompts, and examples. This is particularly useful for domain-specific evaluations or specialized use cases.
+
+#### 1. Custom Criteria via CLI
+
+Define criteria directly in the command line:
+
+```bash
+# Define custom criteria with detailed specifications
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" \
+  --custom-criteria "accuracy:Factual correctness and truthfulness:factual:0.4,clarity:How clear and understandable the response is:linguistic:0.3,helpfulness:How useful the response is for the user:qualitative:0.3"
+```
+
+**Format**: `name:description:type:weight,name2:description2:type2:weight2`
+
+#### 2. Custom Criteria from File
+
+Create a JSON file with detailed criteria definitions:
+
+```bash
+# Use criteria from JSON file
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" \
+  --criteria-file ./my-criteria.json
+```
+
+**JSON Format**:
+
+```json
+{
+  "name": "Custom Evaluation Criteria",
+  "description": "Custom criteria for specific use case",
+  "criteria": [
+    {
+      "name": "accuracy",
+      "description": "Factual correctness and truthfulness",
+      "criterion_type": "factual",
+      "weight": 1.0,
+      "evaluation_prompt": "Evaluate the factual accuracy of the response. Are the claims correct and verifiable?",
+      "examples": {
+        "1": "Contains major factual errors",
+        "2": "Some factual inaccuracies present",
+        "3": "Mostly accurate with minor errors",
+        "4": "Accurate with no significant issues",
+        "5": "Completely accurate and well-supported"
+      },
+      "domain_specific": false,
+      "requires_context": false,
+      "metadata": {
+        "importance": "high",
+        "category": "content_quality"
+      }
+    }
+  ]
+}
+```
+
+#### 3. Create Criteria Template
+
+Generate a template file to get started:
+
+```bash
+# Create a criteria template
+python -m src.llm_judge create-criteria-template my-criteria.json \
+  --name "Academic Evaluation" \
+  --description "Criteria for academic content evaluation"
+```
+
+#### 4. List Available Criteria Types
+
+See all available criterion types:
+
+```bash
+# List available criterion types
+python -m src.llm_judge evaluate --list-criteria-types
+```
+
+Available types: `factual`, `qualitative`, `structural`, `contextual`, `linguistic`, `ethical`
+
+### Weight Configuration Options
+
+#### 1. Custom Weights via CLI
+
+Use the `--criteria-weights` argument to specify custom weights:
+
+```bash
+# Emphasize accuracy and clarity
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" \
+  --criteria-weights "accuracy:0.4,clarity:0.3,helpfulness:0.2,relevance:0.1"
+
+# Focus on completeness and coherence
+python -m src.llm_judge evaluate "Explain ML" "Machine learning is..." \
+  --criteria-weights "completeness:0.5,coherence:0.3,clarity:0.2"
+```
+
+**Weight Format**: `criterion1:weight1,criterion2:weight2,criterion3:weight3`
+
+- Weights are automatically normalized to sum to 1.0
+- Available criteria depend on the criteria type (comprehensive, basic, technical, creative)
+- Weights can be specified as decimals (0.3) or integers (3)
+
+#### 2. Equal Weights
+
+Use the `--equal-weights` flag to give all criteria equal importance:
+
+```bash
+# All criteria get equal weight (1/n where n is number of criteria)
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --equal-weights
+```
+
+#### 3. Configuration File
+
+Set default weight configuration in your config file:
+
+```json
+{
+  "default_provider": "openai",
+  "default_criteria_type": "comprehensive",
+  "criteria_weights": "accuracy:0.3,clarity:0.25,helpfulness:0.25,completeness:0.2",
+  "use_equal_weights": false
+}
+```
+
+### Available Criteria by Type
+
+#### Comprehensive (7 criteria)
+
+- `accuracy` - Factual correctness and truthfulness
+- `completeness` - Thoroughness of coverage
+- `clarity` - Clarity of expression
+- `relevance` - Relevance to the prompt
+- `helpfulness` - Practical value
+- `coherence` - Logical flow and consistency
+- `appropriateness` - Tone and style appropriateness
+
+#### Basic (3 criteria)
+
+- `accuracy` - Factual correctness
+- `clarity` - Clarity and understandability
+- `helpfulness` - Usefulness to the user
+
+#### Technical (5 criteria)
+
+- `technical_accuracy` - Technical correctness
+- `implementation_feasibility` - Practical implementability
+- `best_practices` - Adherence to standards
+- `completeness` - Thoroughness of explanation
+- `clarity` - Technical clarity
+
+#### Creative (5 criteria)
+
+- `creativity` - Originality and creative value
+- `engagement` - How engaging the content is
+- `coherence` - Internal consistency
+- `relevance` - Relevance to the theme
+- `style` - Writing style and quality
+
+### Examples
+
+#### Example 1: Academic Evaluation with Custom Criteria
+
+For academic content, use specialized criteria:
+
+```bash
+# Use academic criteria from file
+python -m src.llm_judge evaluate "Explain quantum computing" "Quantum computing uses..." \
+  --criteria-file examples/academic_criteria.json
+
+# Or define custom academic criteria
+python -m src.llm_judge evaluate "Explain quantum computing" "Quantum computing uses..." \
+  --custom-criteria "accuracy:Factual correctness and truthfulness:factual:0.3,completeness:Thoroughness of coverage:qualitative:0.3,clarity:Clarity of expression:linguistic:0.2,relevance:Relevance to the prompt:contextual:0.2"
+```
+
+#### Example 2: Creative Writing
+
+For creative content, emphasize creativity and engagement:
+
+```bash
+python -m src.llm_judge evaluate "Write a story about AI" "Once upon a time..." \
+  --criteria-type creative \
+  --criteria-weights "creativity:0.4,engagement:0.3,coherence:0.2,style:0.1"
+```
+
+#### Example 3: Technical Documentation with Custom Criteria
+
+For technical documentation, use specialized technical criteria:
+
+```bash
+# Use technical criteria from file
+python -m src.llm_judge evaluate "Document this API" "This API provides..." \
+  --criteria-file examples/technical_criteria.json
+
+# Or define custom technical criteria
+python -m src.llm_judge evaluate "Document this API" "This API provides..." \
+  --custom-criteria "technical_accuracy:Correctness of technical information:factual:0.4,implementation_feasibility:Whether solutions are implementable:contextual:0.3,clarity:Technical clarity and understandability:linguistic:0.3"
+```
+
+### Programmatic Custom Criteria Configuration
+
+```python
+from src.llm_judge import LLMJudge, CandidateResponse
+from src.llm_judge.domain.evaluation.custom_criteria import (
+    CustomCriteriaBuilder,
+    CustomCriteriaParser
+)
+from src.llm_judge.domain.evaluation.weight_config import WeightConfigParser, CriteriaWeightApplier
+
+async def evaluate_with_custom_criteria():
+    judge = LLMJudge()
+
+    candidate = CandidateResponse(
+        prompt="Explain machine learning",
+        response="Machine learning is a subset of AI...",
+        model="gpt-4"
+    )
+
+    # Method 1: Build custom criteria programmatically
+    builder = CustomCriteriaBuilder()
+    builder.add_criterion(
+        name="accuracy",
+        description="Factual correctness and truthfulness",
+        criterion_type="factual",
+        weight=0.4,
+        evaluation_prompt="Evaluate the factual accuracy of the response.",
+        examples={1: "Contains errors", 5: "Completely accurate"}
+    )
+    builder.add_criterion(
+        name="clarity",
+        description="How clear and understandable the response is",
+        criterion_type="linguistic",
+        weight=0.3
+    )
+    builder.add_criterion(
+        name="helpfulness",
+        description="How useful the response is for the user",
+        criterion_type="qualitative",
+        weight=0.3
+    )
+
+    custom_criteria = builder.build()
+
+    # Method 2: Parse from string
+    criteria_string = "accuracy:Factual correctness:factual:0.4,clarity:How clear the response is:linguistic:0.3,helpfulness:How useful the response is:qualitative:0.3"
+    criteria_definitions = CustomCriteriaParser.parse_criteria_string(criteria_string)
+
+    builder2 = CustomCriteriaBuilder()
+    for cd in criteria_definitions:
+        builder2.add_criterion(
+            name=cd.name,
+            description=cd.description,
+            criterion_type=cd.criterion_type,
+            weight=cd.weight
+        )
+    custom_criteria2 = builder2.build()
+
+    # Evaluate with custom criteria
+    result = await judge.evaluate_multi_criteria(
+        candidate,
+        custom_criteria=custom_criteria
+    )
+
+    print(f"Overall Score: {result.aggregated.overall_score:.1f}/5")
+    for cs in result.criterion_scores:
+        print(f"{cs.criterion_name}: {cs.score}/5 (weight: {cs.weight:.1%})")
+```
 
 ## Using Multi-Criteria Evaluation
 
@@ -40,6 +312,12 @@ python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" -
 
 # JSON output with all criterion details
 python -m src.llm_judge --output json evaluate "What is AI?" "AI is artificial intelligence"
+
+# Use custom criteria weights
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --criteria-weights "accuracy:0.4,clarity:0.3,helpfulness:0.3"
+
+# Use equal weights for all criteria
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --equal-weights
 
 # Batch processing (all items use multi-criteria)
 python -m src.llm_judge batch evaluations.jsonl --output results.json
