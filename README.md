@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Architecture](https://img.shields.io/badge/architecture-DDD%20Clean%20Architecture-purple)](docs/architecture/README.md)
 
-A comprehensive LLM-as-a-Judge system for evaluating language model outputs with **multi-criteria evaluation by default**. Features comprehensive scoring across 7 evaluation dimensions with rich CLI interface, robust batch processing capabilities, and **structured output support** across all providers.
+A comprehensive LLM-as-a-Judge system for evaluating language model outputs with **multi-criteria evaluation by default**. Features comprehensive scoring across 7 evaluation dimensions with rich CLI interface, robust batch processing capabilities, **structured output support** across all providers, and **specialized domain-specific evaluation criteria** including administrative information disclosure assessment.
 
 ## Quick Start
 
@@ -19,6 +19,9 @@ cp .env.example .env
 
 # CLI Usage - Multi-criteria evaluation (default)
 python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence"
+
+# CLI Usage - Administrative Information Disclosure Evaluation (Featured)
+python -m src.llm_judge evaluate "行政文書の開示可否について" "この文書には個人情報が含まれているため..." --criteria-file criteria/administrative_information_non_disclosure.json
 
 # CLI Usage - Custom criteria weights
 python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --criteria-weights "accuracy:0.4,clarity:0.3,helpfulness:0.3"
@@ -52,6 +55,9 @@ python -m src.llm_judge compare "Explain ML" "Basic explanation" "Detailed expla
 # CLI Usage - Batch processing from file
 python -m src.llm_judge create-sample-batch sample.jsonl  # Create sample file
 python -m src.llm_judge batch sample.jsonl --output results.json --max-concurrent 5
+
+# CLI Usage - Batch processing with administrative criteria
+python -m src.llm_judge batch administrative_batch.jsonl --output admin_results.json --criteria-file criteria/administrative_information_non_disclosure.json
 
 # Run tests
 pytest
@@ -147,6 +153,7 @@ llm-as-a-judge/
 │   └── fixtures/                    # Test fixtures and sample data
 ├── docs/                            # Comprehensive documentation
 ├── criteria/                        # Evaluation criteria configuration files
+│   └── administrative_information_non_disclosure.json  # Featured: Legal compliance evaluation
 ├── config.json                      # Main configuration file
 └── README.md                        # This file - project overview
 ```
@@ -159,6 +166,13 @@ llm-as-a-judge/
 - **Weighted scoring system**: Configurable weights for each criterion
 - **Rich statistical analysis**: Mean, median, standard deviation, confidence intervals
 - **Detailed qualitative feedback**: Strengths, weaknesses, and improvement suggestions
+
+### ✅ Domain-Specific Evaluation Criteria
+
+- **Administrative Information Disclosure**: Specialized criteria for Japan's Information Disclosure Law compliance
+- **Legal Framework Integration**: Built-in evaluation for personal information, corporate confidentiality, national security, and public safety
+- **Comprehensive Legal Analysis**: 6 specialized criteria covering all major non-disclosure provisions
+- **Japanese Administrative Context**: Tailored for Japanese government agencies and legal requirements
 
 ### ✅ Advanced Display Capabilities
 
@@ -222,6 +236,52 @@ pytest --cov=src/llm_judge --cov-report=html
 ```
 
 ## 🚀 Usage Examples
+
+### Administrative Information Disclosure Evaluation (Featured)
+
+The system includes specialized criteria for evaluating administrative information disclosure decisions according to Japan's Information Disclosure Law (Act No. 42 of 1999):
+
+```python
+from src.llm_judge import LLMJudge, CandidateResponse
+import asyncio
+
+async def administrative_evaluation():
+    judge = LLMJudge()
+
+    # Load administrative information disclosure criteria
+    candidate = CandidateResponse(
+        prompt="この行政文書の開示可否について判断してください。文書には個人の医療記録が含まれています。",
+        response="この文書は個人情報保護法第5条1号に該当するため、原則として非開示と判断します。ただし、生命・健康・生活・財産の保護に必要な場合は開示例外を検討します。",
+        model="claude-3"
+    )
+
+    # Evaluate using administrative criteria
+    result = await judge.evaluate_multi_criteria(
+        candidate,
+        criteria_file="criteria/administrative_information_non_disclosure.json"
+    )
+
+    print(f"Overall Score: {result.aggregated.overall_score:.1f}/5")
+    print("Legal Analysis:")
+
+    # Access specialized criterion scores
+    for cs in result.criterion_scores:
+        print(f"  {cs.criterion_name}: {cs.score}/5")
+        print(f"    Reasoning: {cs.reasoning}")
+
+    await judge.close()
+
+asyncio.run(administrative_evaluation())
+```
+
+**Administrative Criteria Features:**
+
+- **Personal Information Protection** (25%): Comprehensive evaluation of privacy rights
+- **Corporate Information Protection** (20%): Business confidentiality assessment
+- **National Security Concerns** (20%): Security and international relations evaluation
+- **Public Safety and Order** (15%): Law enforcement and public safety assessment
+- **Internal Deliberation Protection** (10%): Government process integrity evaluation
+- **Administrative Operations Protection** (10%): Operational efficiency assessment
 
 ### Basic Multi-Criteria Evaluation
 
@@ -290,11 +350,21 @@ The system now uses a unified criteria configuration system with the `criteria/`
 
 ```
 criteria/
-├── README.md                    # Criteria documentation
-├── default.json                 # Default evaluation criteria
-├── custom.json                  # Custom criteria example
-└── template.json                # Template for creating new criteria
+├── README.md                                    # Criteria documentation
+├── default.json                                 # Default evaluation criteria
+├── administrative_information_non_disclosure.json  # Featured: Administrative disclosure evaluation
+├── custom.json                                  # Custom criteria example
+└── template.json                                # Template for creating new criteria
 ```
+
+#### Featured: Administrative Information Disclosure Criteria
+
+The `administrative_information_non_disclosure.json` file provides comprehensive evaluation criteria for Japan's Information Disclosure Law (Act No. 42 of 1999):
+
+- **Legal Compliance**: Evaluates responses against all 6 major non-disclosure provisions
+- **Detailed Analysis**: Each criterion includes specific evaluation steps and legal considerations
+- **Japanese Context**: Tailored for Japanese administrative agencies and legal framework
+- **Comprehensive Coverage**: Personal information, corporate confidentiality, national security, public safety, internal deliberation, and administrative operations
 
 ### Environment Configuration
 
@@ -334,6 +404,41 @@ See [Development Guide](docs/development/README.md) for detailed contributing gu
 ## 📄 License
 
 MIT License - Open source implementation following the Evidently AI methodology.
+
+## 🏛️ Administrative Information Disclosure Evaluation
+
+### Use Cases
+
+The `administrative_information_non_disclosure.json` criteria file is specifically designed for:
+
+- **Government Agencies**: Evaluating information disclosure decisions according to Japan's Information Disclosure Law
+- **Legal Compliance**: Ensuring proper application of non-disclosure provisions
+- **Training Programs**: Educating staff on proper disclosure evaluation procedures
+- **Quality Assurance**: Standardizing disclosure decision-making processes
+- **Audit and Review**: Assessing the quality of existing disclosure determinations
+
+### Key Benefits
+
+- **Legal Accuracy**: Built-in evaluation against all 6 major non-disclosure provisions of Japan's Information Disclosure Law
+- **Comprehensive Analysis**: Detailed evaluation steps for each criterion with specific legal considerations
+- **Japanese Context**: Tailored for Japanese administrative agencies and legal framework
+- **Risk Assessment**: Identifies potential legal and operational risks in disclosure decisions
+- **Documentation Support**: Provides structured reasoning for disclosure determinations
+
+### Example Applications
+
+```bash
+# Evaluate a disclosure decision
+python -m src.llm_judge evaluate \
+  "この文書の開示可否について判断してください" \
+  "個人情報が含まれているため非開示と判断します" \
+  --criteria-file criteria/administrative_information_non_disclosure.json
+
+# Batch evaluation of multiple decisions
+python -m src.llm_judge batch disclosure_decisions.jsonl \
+  --output evaluation_results.json \
+  --criteria-file criteria/administrative_information_non_disclosure.json
+```
 
 ## 🙏 Acknowledgments
 
