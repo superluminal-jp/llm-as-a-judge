@@ -2,6 +2,8 @@
 
 This directory contains test fixtures and sample data used by the test suite.
 
+> **📚 For comprehensive test documentation, see the main [tests/README.md](../README.md) and [tests/INDEX.md](../INDEX.md)**
+
 ## Directory Structure
 
 ```
@@ -9,7 +11,7 @@ fixtures/
 ├── README.md              # This file
 └── sample_data/           # Sample data for testing
     ├── minimal_batch.jsonl         # Minimal batch test data (3 entries)
-    ├── test_batch.jsonl            # Standard test batch data  
+    ├── test_batch.jsonl            # Standard test batch data
     └── sample_batch_results.json   # Sample batch evaluation results
 ```
 
@@ -18,12 +20,14 @@ fixtures/
 ### Input Files (.jsonl)
 
 #### `minimal_batch.jsonl`
+
 - **Purpose**: Minimal test data for basic functionality testing
 - **Entries**: 3 simple evaluation cases
 - **Usage**: Quick integration tests, basic functionality validation
 - **Format**: JSONL with `prompt`, `response`, `model`, `criteria` fields
 
 #### `test_batch.jsonl`
+
 - **Purpose**: Standard test scenarios for comprehensive testing
 - **Entries**: Multiple diverse evaluation scenarios
 - **Usage**: Integration tests, batch processing validation
@@ -32,6 +36,7 @@ fixtures/
 ### Output Files (.json)
 
 #### `sample_batch_results.json`
+
 - **Purpose**: Example of expected batch evaluation output format
 - **Usage**: Output format validation, result parsing tests
 - **Format**: JSON with results array and summary statistics
@@ -49,7 +54,7 @@ def load_test_batch(filename):
     """Load test batch data from fixtures."""
     fixtures_dir = Path(__file__).parent / "fixtures" / "sample_data"
     file_path = fixtures_dir / filename
-    
+
     with open(file_path, 'r') as f:
         return [json.loads(line) for line in f if line.strip()]
 
@@ -58,7 +63,7 @@ def load_test_batch(filename):
 def minimal_test_data():
     return load_test_batch("minimal_batch.jsonl")
 
-@pytest.fixture 
+@pytest.fixture
 def standard_test_data():
     return load_test_batch("test_batch.jsonl")
 ```
@@ -73,7 +78,7 @@ class TestBatchProcessing:
     @pytest.fixture
     def test_data(self):
         return load_test_batch("minimal_batch.jsonl")
-    
+
     def test_batch_evaluation(self, test_data):
         """Test batch evaluation with sample data."""
         # Test implementation using sample data
@@ -84,18 +89,20 @@ class TestBatchProcessing:
 ## File Formats
 
 ### Input JSONL Format
+
 ```json
 {"prompt": "What is AI?", "response": "AI is artificial intelligence", "model": "test-model", "criteria": "accuracy"}
 {"prompt": "Explain ML", "response": "Machine learning is...", "model": "test-model", "criteria": "clarity"}
 ```
 
 ### Output JSON Format
+
 ```json
 {
   "results": [
     {
       "prompt": "What is AI?",
-      "response": "AI is artificial intelligence", 
+      "response": "AI is artificial intelligence",
       "evaluation": {
         "score": 4.2,
         "reasoning": "Clear but basic definition",
@@ -137,7 +144,7 @@ class TestBatchProcessing:
 ### Regular Tasks
 
 - **Validation**: Ensure all fixture files have valid format
-- **Cleanup**: Remove unused or outdated fixtures  
+- **Cleanup**: Remove unused or outdated fixtures
 - **Updates**: Keep fixtures aligned with current system capabilities
 - **Documentation**: Update this README when adding new fixtures
 
@@ -155,7 +162,7 @@ with open('tests/fixtures/sample_data/minimal_batch.jsonl') as f:
             print(f'Line {i}: {e}')
 "
 
-# Validate JSON files  
+# Validate JSON files
 python -c "
 import json
 with open('tests/fixtures/sample_data/sample_batch_results.json') as f:
@@ -169,7 +176,7 @@ print('Valid JSON')
 These fixtures are used by:
 
 - **Unit Tests**: For consistent input data
-- **Integration Tests**: For end-to-end workflow validation  
+- **Integration Tests**: For end-to-end workflow validation
 - **Performance Tests**: For load testing scenarios
 - **Regression Tests**: For ensuring consistent behavior
 - **Mock Data**: For external API simulation

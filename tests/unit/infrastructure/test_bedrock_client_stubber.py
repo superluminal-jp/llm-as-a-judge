@@ -215,9 +215,8 @@ class TestBedrockClientStubberNovaModels:
                     "messages": [
                         {"role": "user", "content": [{"text": "What is AI?"}]}
                     ],
-                    "maxTokens": 200,
                     "system": [{"text": "You are a helpful AI assistant."}],
-                    "inferenceConfig": {"temperature": 0.1, "topP": 0.8},
+                    "inferenceConfig": {"maxTokens": 200, "temperature": 0.1},
                 }
             ),
             "contentType": "application/json",
@@ -286,10 +285,8 @@ class TestBedrockClientStubberAnthropicModels:
             "modelId": "anthropic.claude-3-sonnet-20240229-v1:0",
             "body": json.dumps(
                 {
-                    "messages": [
-                        {"role": "user", "content": [{"text": "Hello Claude!"}]}
-                    ],
-                    "maxTokens": 100,
+                    "max_tokens": 100,
+                    "messages": [{"role": "user", "content": "Hello Claude!"}],
                     "temperature": 0.1,
                     "anthropic_version": "bedrock-2023-05-31",
                 }
@@ -352,13 +349,13 @@ class TestBedrockClientStubberAnthropicModels:
             "modelId": "anthropic.claude-3-sonnet-20240229-v1:0",
             "body": json.dumps(
                 {
+                    "max_tokens": 300,
                     "messages": [
                         {
                             "role": "user",
-                            "content": [{"text": "Explain machine learning"}],
+                            "content": "Explain machine learning",
                         }
                     ],
-                    "maxTokens": 300,
                     "system": "You are a technical expert who explains complex topics clearly.",
                     "temperature": 0.1,
                     "anthropic_version": "bedrock-2023-05-31",
@@ -433,9 +430,8 @@ class TestBedrockClientStubberErrorScenarios:
                         {"role": "user", "content": [{"text": "Test message"}]}
                     ],
                     "inferenceConfig": {
-                        "temperature": 0.1,
-                        "topP": 0.8,
                         "maxTokens": 100,
+                        "temperature": 0.1,
                     },
                 }
             ),
@@ -488,9 +484,8 @@ class TestBedrockClientStubberErrorScenarios:
                         {"role": "user", "content": [{"text": "Test message"}]}
                     ],
                     "inferenceConfig": {
-                        "temperature": 0.1,
-                        "topP": 0.8,
                         "maxTokens": 100,
+                        "temperature": 0.1,
                     },
                 }
             ),
@@ -535,9 +530,8 @@ class TestBedrockClientStubberErrorScenarios:
                         {"role": "user", "content": [{"text": "Test message"}]}
                     ],
                     "inferenceConfig": {
-                        "temperature": 0.1,
-                        "topP": 0.8,
                         "maxTokens": 100,
+                        "temperature": 0.1,
                     },
                 }
             ),
@@ -584,9 +578,8 @@ class TestBedrockClientStubberErrorScenarios:
                         {"role": "user", "content": [{"text": "Test message"}]}
                     ],
                     "inferenceConfig": {
-                        "temperature": 0.1,
-                        "topP": 0.8,
                         "maxTokens": 100,
+                        "temperature": 0.1,
                     },
                 }
             ),
@@ -628,7 +621,7 @@ class TestBedrockClientStubberEvaluation:
         """Test successful evaluation with stubber."""
         client, stubber = bedrock_client_with_stubber
 
-        # Prepare expected request for evaluation
+        # Prepare expected request for evaluation - matches actual evaluate_with_bedrock method
         expected_request = {
             "modelId": "amazon.nova-pro-v1:0",
             "body": json.dumps(
@@ -638,15 +631,46 @@ class TestBedrockClientStubberEvaluation:
                             "role": "user",
                             "content": [
                                 {
-                                    "text": 'Evaluate this response for accuracy: "AI is artificial intelligence"'
+                                    "text": "Evaluate this response on accuracy from 1-5.\n\nOriginal Question: What is AI?\n\nResponse to Evaluate: AI is artificial intelligence\n\nProvide your evaluation in JSON format with the following structure:\n- score: A number between 1-5\n- reasoning: A detailed explanation of your evaluation\n- confidence: A number between 0.0-1.0 indicating your confidence in this evaluation\n\nBe thorough and fair in your evaluation."
                                 }
                             ],
                         }
                     ],
-                    "inferenceConfig": {
-                        "temperature": 0.1,
-                        "topP": 0.8,
-                        "maxTokens": 200,
+                    "system": [
+                        {
+                            "text": "You are an expert evaluator. Your task is to evaluate responses based on given criteria. You must respond with valid JSON in the exact format specified."
+                        }
+                    ],
+                    "inferenceConfig": {"maxTokens": 500, "temperature": 0.1},
+                    "responseFormat": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "evaluation_response",
+                            "strict": True,
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "score": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 5,
+                                        "description": "Evaluation score from 1-5",
+                                    },
+                                    "reasoning": {
+                                        "type": "string",
+                                        "description": "Detailed explanation of the evaluation",
+                                    },
+                                    "confidence": {
+                                        "type": "number",
+                                        "minimum": 0.0,
+                                        "maximum": 1.0,
+                                        "description": "Confidence level in the evaluation",
+                                    },
+                                },
+                                "required": ["score", "reasoning", "confidence"],
+                                "additionalProperties": False,
+                            },
+                        },
                     },
                 }
             ),
@@ -693,7 +717,7 @@ class TestBedrockClientStubberEvaluation:
             )
 
             # Verify result
-            assert result["score"] == 4.5
+            assert result["score"] == 4  # Score is converted to integer
             assert (
                 result["reasoning"]
                 == "The response is factually accurate and provides a clear definition of AI."
@@ -709,7 +733,7 @@ class TestBedrockClientStubberEvaluation:
         """Test evaluation with JSON parsing fallback."""
         client, stubber = bedrock_client_with_stubber
 
-        # Prepare expected request
+        # Prepare expected request - matches actual evaluate_with_bedrock method
         expected_request = {
             "modelId": "amazon.nova-pro-v1:0",
             "body": json.dumps(
@@ -719,15 +743,46 @@ class TestBedrockClientStubberEvaluation:
                             "role": "user",
                             "content": [
                                 {
-                                    "text": 'Evaluate this response for quality: "This is a good response"'
+                                    "text": "Evaluate this response on quality from 1-5.\n\nOriginal Question: What is AI?\n\nResponse to Evaluate: This is a good response\n\nProvide your evaluation in JSON format with the following structure:\n- score: A number between 1-5\n- reasoning: A detailed explanation of your evaluation\n- confidence: A number between 0.0-1.0 indicating your confidence in this evaluation\n\nBe thorough and fair in your evaluation."
                                 }
                             ],
                         }
                     ],
-                    "inferenceConfig": {
-                        "temperature": 0.1,
-                        "topP": 0.8,
-                        "maxTokens": 200,
+                    "system": [
+                        {
+                            "text": "You are an expert evaluator. Your task is to evaluate responses based on given criteria. You must respond with valid JSON in the exact format specified."
+                        }
+                    ],
+                    "inferenceConfig": {"maxTokens": 500, "temperature": 0.1},
+                    "responseFormat": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "evaluation_response",
+                            "strict": True,
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "score": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 5,
+                                        "description": "Evaluation score from 1-5",
+                                    },
+                                    "reasoning": {
+                                        "type": "string",
+                                        "description": "Detailed explanation of the evaluation",
+                                    },
+                                    "confidence": {
+                                        "type": "number",
+                                        "minimum": 0.0,
+                                        "maximum": 1.0,
+                                        "description": "Confidence level in the evaluation",
+                                    },
+                                },
+                                "required": ["score", "reasoning", "confidence"],
+                                "additionalProperties": False,
+                            },
+                        },
                     },
                 }
             ),
@@ -789,7 +844,7 @@ class TestBedrockClientStubberComparison:
         """Test successful comparison with stubber."""
         client, stubber = bedrock_client_with_stubber
 
-        # Prepare expected request for comparison
+        # Prepare expected request for comparison - matches actual compare_with_bedrock method
         expected_request = {
             "modelId": "amazon.nova-pro-v1:0",
             "body": json.dumps(
@@ -799,15 +854,45 @@ class TestBedrockClientStubberComparison:
                             "role": "user",
                             "content": [
                                 {
-                                    "text": 'Compare these two responses and determine which is better:\n\nResponse A: "AI is artificial intelligence"\nResponse B: "AI is a field of computer science focused on creating intelligent machines"'
+                                    "text": 'Compare these two responses and determine which is better.\n\nQuestion: What is AI?\n\nResponse A: AI is artificial intelligence\n\nResponse B: AI is a field of computer science focused on creating intelligent machines\n\nRespond in JSON format with the following structure:\n- winner: Either "A", "B", or "tie"\n- reasoning: A detailed explanation of your comparison\n- confidence: A number between 0.0-1.0 indicating your confidence in this comparison\n\nBe thorough in your comparison.'
                                 }
                             ],
                         }
                     ],
-                    "inferenceConfig": {
-                        "temperature": 0.1,
-                        "topP": 0.8,
-                        "maxTokens": 300,
+                    "system": [
+                        {
+                            "text": "You are an expert evaluator comparing responses. You must respond with valid JSON in the exact format specified."
+                        }
+                    ],
+                    "inferenceConfig": {"maxTokens": 500, "temperature": 0.1},
+                    "responseFormat": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "comparison_response",
+                            "strict": True,
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "winner": {
+                                        "type": "string",
+                                        "enum": ["A", "B", "tie"],
+                                        "description": "Which response is better: A, B, or tie",
+                                    },
+                                    "reasoning": {
+                                        "type": "string",
+                                        "description": "Detailed explanation of the comparison",
+                                    },
+                                    "confidence": {
+                                        "type": "number",
+                                        "minimum": 0.0,
+                                        "maximum": 1.0,
+                                        "description": "Confidence level in the comparison",
+                                    },
+                                },
+                                "required": ["winner", "reasoning", "confidence"],
+                                "additionalProperties": False,
+                            },
+                        },
                     },
                 }
             ),
@@ -881,9 +966,9 @@ class TestBedrockClientStubberRequestValidation:
         )
 
         # Verify Nova-specific format
-        assert body["max_tokens"] == 150
+        assert body["inferenceConfig"]["maxTokens"] == 150
         assert body["inferenceConfig"]["temperature"] == 0.3
-        assert body["inferenceConfig"]["topP"] == 0.8
+        # topP is not included when temperature is provided (mutually exclusive)
         assert body["system"] == [{"text": "You are a helpful assistant"}]
         assert len(body["messages"]) == 1  # System message becomes separate parameter
         assert body["messages"][0]["role"] == "user"
@@ -905,7 +990,7 @@ class TestBedrockClientStubberRequestValidation:
         # Verify Anthropic-specific format
         assert body["max_tokens"] == 200
         assert body["temperature"] == 0.2
-        assert body["top_p"] == 0.9
+        # top_p is not included when temperature is provided (mutually exclusive)
         assert body["system"] == "You are a helpful assistant"
         assert len(body["messages"]) == 1  # System message becomes separate parameter
         assert body["messages"][0]["role"] == "user"
@@ -929,9 +1014,8 @@ class TestBedrockClientStubberRequestValidation:
                         {"role": "user", "content": [{"text": "Test message"}]}
                     ],
                     "inferenceConfig": {
-                        "temperature": 0.5,
-                        "topP": 0.7,
                         "maxTokens": 100,
+                        "temperature": 0.5,
                     },
                 }
             ),
@@ -989,7 +1073,7 @@ class TestBedrockClientStubberIntegration:
                             "messages": [
                                 {"role": "user", "content": [{"text": "First message"}]}
                             ],
-                            "inferenceConfig": {"temperature": 0.1, "maxTokens": 100},
+                            "inferenceConfig": {"maxTokens": 100, "temperature": 0.1},
                         }
                     ),
                     "contentType": "application/json",
@@ -1007,7 +1091,7 @@ class TestBedrockClientStubberIntegration:
                                     "content": [{"text": "Second message"}],
                                 }
                             ],
-                            "inferenceConfig": {"temperature": 0.1, "maxTokens": 100},
+                            "inferenceConfig": {"maxTokens": 100, "temperature": 0.1},
                         }
                     ),
                     "contentType": "application/json",
@@ -1026,6 +1110,7 @@ class TestBedrockClientStubberIntegration:
             req_resp["response"]["body"].read.return_value = json.dumps(
                 response_body
             ).encode("utf-8")
+            req_resp["response"]["contentType"] = "application/json"
             stubber.add_response(
                 "invoke_model", req_resp["response"], req_resp["request"]
             )
@@ -1069,60 +1154,29 @@ class TestBedrockClientStubberIntegration:
                         {"role": "user", "content": [{"text": "Test message"}]}
                     ],
                     "inferenceConfig": {
-                        "temperature": 0.1,
-                        "topP": 0.9,
                         "maxTokens": 100,
+                        "temperature": 0.1,
                     },
                 }
             ),
             "contentType": "application/json",
         }
 
-        # Add throttling error
-        stubber.add_client_error(
-            "invoke_model",
-            "ThrottlingException",
-            "Rate limit exceeded.",
-            expected_params=expected_request,
-        )
-
-        # Second request succeeds
-        response_body = {
-            "output": {"message": {"content": [{"text": "Success after retry"}]}},
-            "stopReason": "end_turn",
-            "usage": {"inputTokens": 10, "outputTokens": 20},
-        }
-
-        expected_response = {"body": Mock(), "contentType": "application/json"}
-        expected_response["body"].read.return_value = json.dumps(response_body).encode(
-            "utf-8"
-        )
-        stubber.add_response("invoke_model", expected_response, expected_request)
+        # Add throttling errors for all 5 attempts (1 initial + 4 retries for rate limit)
+        for _ in range(5):
+            stubber.add_client_error(
+                "invoke_model",
+                "ThrottlingException",
+                "Rate limit exceeded.",
+                expected_params=expected_request,
+            )
 
         stubber.activate()
 
-        # Mock retry manager to simulate retry behavior
-        with patch.object(client._retry_manager, "execute_with_retry") as mock_retry:
-            call_count = 0
-
-            async def mock_execute(func, **kwargs):
-                nonlocal call_count
-                call_count += 1
-                if call_count == 1:
-                    # First call fails
-                    raise RateLimitError("Rate limit exceeded")
-                else:
-                    # Second call succeeds
-                    return await func()
-
-            mock_retry.side_effect = mock_execute
-
-            # Execute test - should succeed after retry
-            messages = [{"role": "user", "content": "Test message"}]
-            response = await client.invoke_model(messages, max_tokens=100)
-
-            assert response.content == "Success after retry"
-            assert call_count == 2  # Verify retry was attempted
+        # Execute test - should raise RateLimitError due to throttling
+        messages = [{"role": "user", "content": "Test message"}]
+        with pytest.raises(RateLimitError, match="Rate limit exceeded"):
+            await client.invoke_model(messages, max_tokens=100)
 
         stubber.assert_no_pending_responses()
 
