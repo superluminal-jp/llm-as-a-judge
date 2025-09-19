@@ -4,14 +4,16 @@
 import asyncio
 import os
 import sys
+import pytest
 
 # Add current directory to Python path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.llm_judge.infrastructure.config.config import load_config, setup_logging
-from llm_judge_simple import LLMJudge
+from src.llm_judge.application.services.llm_judge_service import LLMJudge
 
 
+@pytest.mark.asyncio
 async def test_timeout_integration():
     """Test that the timeout management system is working correctly."""
     print("🔧 Testing Timeout Management Integration")
@@ -80,6 +82,7 @@ async def test_timeout_integration():
                 pass
 
 
+@pytest.mark.asyncio
 async def test_timeout_configuration():
     """Test that timeout configuration is loaded correctly."""
     print("⚙️  Testing Timeout Configuration")

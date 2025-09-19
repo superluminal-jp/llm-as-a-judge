@@ -1,0 +1,97 @@
+{
+  "batch_summary": {
+    "batch_id": "5ba88f6e-5489-478f-93f0-d04e8e65872b",
+    "status": "completed",
+    "total_items": 2,
+    "successful_items": 2,
+    "failed_items": 0,
+    "success_rate": 1.0,
+    "processing_duration": 42.647547,
+    "average_processing_time": 21.32351505756378,
+    "total_cost": null
+  },
+  "results": [
+    {
+      "item_id": "e1f27957-3d91-476c-aff4-c4f6ebb2ee3d",
+      "status": "success",
+      "evaluation_type": "single",
+      "processed_at": "2025-09-06T00:16:16.099088",
+      "processing_duration": 19.972039937973022,
+      "result": {
+        "score": 3.8,
+        "reasoning": "The response provides a technically accurate and clear definition of artificial intelligence, directly addressing the question asked. However, it suffers from significant brevity that limits its completeness and helpfulness. While the response is perfectly coherent and relevant, it reads more like a dictionary definition rather than an informative explanation that would truly help someone understand the breadth and significance of AI as a field.",
+        "confidence": 0.9125,
+        "metadata": {
+          "multi_criteria": true,
+          "criteria_count": 7,
+          "individual_scores": {
+            "accuracy": {
+              "score": 4.0,
+              "reasoning": "The response is factually accurate. AI is indeed a field of computer science focused on creating intelligent machines. This is a correct and verifiable definition that aligns with standard academic and industry understanding of artificial intelligence."
+            },
+            "completeness": {
+              "score": 2.0,
+              "reasoning": "While the response provides a basic definition, it lacks depth and misses many important aspects of AI. It doesn't mention key concepts like machine learning, neural networks, applications, types of AI, or provide examples. For such a broad and complex topic, the response is quite minimal."
+            },
+            "clarity": {
+              "score": 5.0,
+              "reasoning": "The response is exceptionally clear and concise. It uses simple, understandable language and presents the information in a straightforward manner that anyone can comprehend. There are no ambiguous terms or confusing elements."
+            },
+            "relevance": {
+              "score": 5.0,
+              "reasoning": "The response directly addresses the question 'What is artificial intelligence?' by providing a definition of AI. It stays perfectly on-topic without any tangents or irrelevant information."
+            },
+            "helpfulness": {
+              "score": 2.0,
+              "reasoning": "While the response provides a basic understanding of what AI is, it offers limited practical value. Someone seeking to understand AI would benefit from more detailed information about applications, examples, or different types of AI systems. The response serves as a starting point but lacks actionable insights."
+            },
+            "coherence": {
+              "score": 5.0,
+              "reasoning": "The response is perfectly coherent despite its brevity. The single sentence flows logically and presents a consistent idea without any contradictions or structural issues."
+            },
+            "appropriateness": {
+              "score": 4.0,
+              "reasoning": "The tone and style are appropriate for a general audience seeking a basic definition. The formal yet accessible language is well-suited for an educational context. However, depending on the audience's expertise level, a more detailed response might be more appropriate."
+            }
+          }
+        }
+      },
+      "metadata": {
+        "source_line": 1
+      },
+      "prompt": "What is artificial intelligence?",
+      "response": "AI is a field of computer science focused on creating intelligent machines.",
+      "model": "test-model",
+      "criteria": "accuracy and clarity"
+    },
+    {
+      "item_id": "d7168a6a-f5df-4461-8d7d-bc91c31502e8",
+      "status": "success",
+      "evaluation_type": "single",
+      "processed_at": "2025-09-06T00:16:38.774268",
+      "processing_duration": 22.67499017715454,
+      "result": {
+        "score": 3.0,
+        "reasoning": "Error parsing multi-criteria response: Expecting ',' delimiter: line 44 column 6 (char 3002)",
+        "confidence": 0.1,
+        "metadata": {
+          "multi_criteria": true,
+          "criteria_count": 1,
+          "individual_scores": {
+            "overall_quality": {
+              "score": 3.0,
+              "reasoning": "Failed to parse multi-criteria evaluation: Expecting ',' delimiter: line 44 column 6 (char 3002). Raw response available in metadata."
+            }
+          }
+        }
+      },
+      "metadata": {
+        "source_line": 2
+      },
+      "prompt": "Explain machine learning",
+      "response": "Machine learning is a subset of AI that enables computers to learn from data without being explicitly programmed.",
+      "model": "test-model",
+      "criteria": "completeness and accuracy"
+    }
+  ]
+}

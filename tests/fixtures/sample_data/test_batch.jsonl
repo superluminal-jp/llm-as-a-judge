@@ -1,0 +1,2 @@
+{"type": "single", "prompt": "What is artificial intelligence?", "response": "AI is a field of computer science focused on creating intelligent machines.", "model": "test-model", "criteria": "accuracy and clarity"}
+{"type": "single", "prompt": "Explain machine learning", "response": "Machine learning is a subset of AI that enables computers to learn from data without being explicitly programmed.", "model": "test-model", "criteria": "completeness and accuracy"}

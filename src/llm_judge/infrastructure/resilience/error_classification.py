@@ -72,7 +72,10 @@ class ErrorClassifier:
                 r'unauthorized',
                 r'forbidden',
                 r'401',
-                r'403'
+                r'403',
+                r'accessdeniedexception',
+                r'credentials.*invalid',
+                r'aws.*credentials'
             ],
             
             # Rate limiting errors
@@ -81,7 +84,10 @@ class ErrorClassifier:
                 r'quota.*exceeded',
                 r'too.*many.*requests',
                 r'429',
-                r'throttle'
+                r'throttle',
+                r'throttlingexception',
+                r'provisioned.*throughput.*exceeded',
+                r'request.*rate.*exceeded'
             ],
             
             # Network errors
@@ -108,7 +114,11 @@ class ErrorClassifier:
                 r'validation.*failed',
                 r'bad.*request',
                 r'malformed.*request',
-                r'400'
+                r'400',
+                r'validationexception',
+                r'invalid.*parameter',
+                r'model.*not.*found',
+                r'invalid.*model.*id'
             ],
             
             # System errors
@@ -118,7 +128,13 @@ class ErrorClassifier:
                 r'500',
                 r'502',
                 r'503',
-                r'504'
+                r'504',
+                r'modelstreamingexception',
+                r'modelnotreadyexception',
+                r'serviceunavailableexception',
+                r'internalserverexception',
+                r'aws.*sdk.*error',
+                r'botocore.*error'
             ]
         }
         
@@ -247,6 +263,21 @@ class ErrorClassifier:
         if 'ConnectionError' in error_type or 'ConnectTimeout' in error_type:
             return ErrorCategory.NETWORK
         
+        # Check for AWS Bedrock specific exceptions
+        if 'ClientError' in error_type:
+            # Bedrock ClientError usually has an error code
+            if 'ThrottlingException' in error_text:
+                return ErrorCategory.RATE_LIMIT
+            elif 'AccessDeniedException' in error_text or 'InvalidSignatureException' in error_text:
+                return ErrorCategory.AUTHENTICATION
+            elif 'ValidationException' in error_text:
+                return ErrorCategory.USER
+            elif 'ServiceUnavailableException' in error_text or 'InternalServerException' in error_text:
+                return ErrorCategory.SYSTEM
+        
+        if 'BotoCoreError' in error_type or 'NoCredentialsError' in error_type:
+            return ErrorCategory.AUTHENTICATION
+        
         # Check patterns in error message
         for category, patterns in self.error_patterns.items():
             for pattern in patterns:
@@ -305,10 +336,10 @@ class ErrorClassifier:
         
         messages = {
             ErrorCategory.AUTHENTICATION: (
-                "Authentication failed. Please check your API keys and ensure they are valid and properly configured."
+                "Authentication failed. Please check your API keys (OpenAI/Anthropic) or AWS credentials (for Bedrock) and ensure they are valid and properly configured."
             ),
             ErrorCategory.RATE_LIMIT: (
-                "API rate limit exceeded. The service is temporarily throttling requests. Please wait a moment before trying again."
+                "API rate limit exceeded. The service is temporarily throttling requests. For AWS Bedrock, consider requesting quota increases if this persists. Please wait a moment before trying again."
             ),
             ErrorCategory.NETWORK: (
                 "Network connection error. Please check your internet connection and try again."
@@ -341,8 +372,8 @@ class ErrorClassifier:
         """Generate suggested action for the user."""
         
         actions = {
-            ErrorCategory.AUTHENTICATION: "Verify and update your API keys in the configuration",
-            ErrorCategory.RATE_LIMIT: "Wait before making additional requests, consider reducing request frequency",
+            ErrorCategory.AUTHENTICATION: "Verify and update your API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY) or AWS credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) in the configuration",
+            ErrorCategory.RATE_LIMIT: "Wait before making additional requests, consider reducing request frequency, or request quota increases for AWS Bedrock if using that provider",
             ErrorCategory.NETWORK: "Check internet connection, verify firewall settings",
             ErrorCategory.TIMEOUT: "Retry the request, consider increasing timeout values if the issue persists",
             ErrorCategory.USER: "Review and correct the input parameters",
