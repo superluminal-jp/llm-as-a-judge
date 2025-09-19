@@ -6,14 +6,15 @@ The LLM-as-a-Judge system follows a layered architecture with clear separation o
 
 ## Evolutionary Architecture Design
 
-### Current State: Domain-Driven Design Implementation (✅ Phase 2 Complete)
+### Current State: Domain-Driven Design Implementation (✅ Phase 2 Complete - Data Persistence & Custom Criteria)
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                       src/llm_judge/                                   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ presentation/                    🖥️ Presentation Layer                 │
 │ ├── cli/                        │                                      │
-│ │   └── __main__.py              │ • CLI Interface                    │
+│ │   └── main.py                  │ • CLI Interface with Data Management│
 │ └── (future: web, api)          │ • User Input/Output                │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ application/                     🔧 Application Layer                  │
@@ -24,19 +25,27 @@ The LLM-as-a-Judge system follows a layered architecture with clear separation o
 ├─────────────────────────────────────────────────────────────────────────┤
 │ domain/                         🧠 Domain Layer                        │
 │ ├── evaluation/                 │                                      │
-│ │   └── (core logic)            │ • Business Logic                   │
-│ └── models/                     │ • Domain Models                    │
-│     └── (value objects)         │ • Domain Services                  │
+│ │   ├── criteria.py             │ • Multi-Criteria Evaluation Logic  │
+│ │   ├── custom_criteria.py      │ • Custom Criteria Definition       │
+│ │   └── weight_config.py        │ • Weight Configuration System      │
+│ ├── persistence/                │                                      │
+│ │   ├── models.py               │ • Data Persistence Models          │
+│ │   └── interfaces.py           │ • Repository Interfaces            │
+│ └── models/                     │ • Domain Models & Value Objects     │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ infrastructure/                 🔌 Infrastructure Layer               │
 │ ├── clients/                    │                                      │
 │ │   ├── openai_client.py        │ • External API Integration         │
 │ │   ├── anthropic_client.py     │ • Data Persistence                 │
-│ │   └── http_client.py          │ • Configuration Management         │
-│ ├── config/                     │ • Reliability Patterns             │
+│ │   └── http_client.py          │ • External API Integration         │
+│ ├── config/                     │ • Configuration Management         │
 │ │   ├── config.py               │                                      │
 │ │   └── logging_config.py       │                                      │
-│ └── resilience/                 │                                      │
+│ ├── persistence/                │ • Data Persistence Infrastructure   │
+│ │   ├── json_repository.py      │                                      │
+│ │   ├── persistence_service.py  │                                      │
+│ │   └── migration.py            │                                      │
+│ └── resilience/                 │ • Reliability Patterns             │
 │     ├── retry_strategies.py     │                                      │
 │     ├── fallback_manager.py     │                                      │
 │     ├── timeout_manager.py      │                                      │
@@ -44,7 +53,8 @@ The LLM-as-a-Judge system follows a layered architecture with clear separation o
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Target State: Layered Production Architecture (Phase 2-4)
+### Target State: Layered Production Architecture (Phase 3-4)
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Presentation Layer                           │
@@ -106,7 +116,7 @@ tests/
 ├── unit/                           # 104 Unit Tests (100% passing)
 │   ├── infrastructure/             # 76 Infrastructure tests
 │   │   ├── test_openai_client.py   # OpenAI SDK integration tests
-│   │   ├── test_anthropic_client.py# Anthropic SDK integration tests  
+│   │   ├── test_anthropic_client.py# Anthropic SDK integration tests
 │   │   ├── test_config.py          # Configuration management tests
 │   │   ├── test_error_classification.py # Error handling tests (28 tests)
 │   │   ├── test_fallback_manager.py# Resilience pattern tests (30 tests)
@@ -123,6 +133,7 @@ tests/
 ### Testing Strategy by Layer
 
 #### Infrastructure Layer Testing (76 tests)
+
 - **API Client Testing**: Proper SDK mocking for OpenAI and Anthropic clients
 - **Resilience Pattern Testing**: Circuit breakers, fallback management, retry strategies
 - **Configuration Testing**: Environment loading, validation, error handling
@@ -130,6 +141,7 @@ tests/
 - **Timeout Management Testing**: 21 tests covering async timeout patterns
 
 #### Integration Layer Testing (19 tests)
+
 - **End-to-End Functionality**: Full LLM judge workflows including compare_responses
 - **Provider Integration**: Real and mock LLM provider testing
 - **Error Recovery Testing**: Cross-system error handling and resilience
@@ -138,6 +150,7 @@ tests/
 ### Test Infrastructure Improvements
 
 #### ✅ Completed Pytest Overhaul
+
 - **AsyncMock Configuration**: Fixed incorrect async mocking for synchronous SDK methods
 - **SDK Exception Mocking**: Proper response object creation for OpenAI/Anthropic exceptions
 - **Test Isolation**: Eliminated state pollution between tests
@@ -145,6 +158,7 @@ tests/
 - **Pytest Configuration**: Updated for proper async support and warning filtering
 
 #### Test Reliability Metrics
+
 - **Success Rate**: 123/123 tests passing (100%)
 - **Unit Test Coverage**: 104 tests covering all infrastructure components
 - **Integration Coverage**: 19 tests validating cross-system functionality
@@ -154,15 +168,22 @@ tests/
 ### Architecture Evolution Path
 
 #### DDD Architecture Implementation Status
+
 ```
-✅ COMPLETED: Domain-Driven Structure
+✅ COMPLETED: Domain-Driven Structure (Phase 1-2)
 ├── src/llm_judge/                    # Main package with proper layering
 │   ├── domain/                       # Business logic (minimal dependencies)
 │   │   ├── evaluation/               # Core evaluation domain
+│   │   │   ├── criteria.py           # ✅ Multi-criteria evaluation system
+│   │   │   ├── custom_criteria.py    # ✅ Custom criteria definition
+│   │   │   └── weight_config.py      # ✅ Weight configuration system
+│   │   ├── persistence/              # ✅ Data persistence domain
+│   │   │   ├── models.py             # ✅ Persistence domain models
+│   │   │   └── interfaces.py         # ✅ Repository interfaces
 │   │   └── models/                   # Domain models and value objects
 │   ├── application/                  # Use cases and orchestration
 │   │   ├── services/
-│   │   │   └── llm_judge_service.py # ✅ Migrated from llm_judge_simple.py
+│   │   │   └── llm_judge_service.py # ✅ Enhanced with persistence & custom criteria
 │   │   └── use_cases/               # Specific use case implementations
 │   ├── infrastructure/              # External concerns
 │   │   ├── clients/                 # ✅ Real LLM API integrations
@@ -170,21 +191,26 @@ tests/
 │   │   │   ├── anthropic_client.py # ✅ Anthropic Claude client
 │   │   │   └── http_client.py      # ✅ HTTP infrastructure
 │   │   ├── config/                  # ✅ Configuration management
-│   │   │   ├── config.py           # ✅ Hierarchical config loading
+│   │   │   ├── config.py           # ✅ Enhanced with persistence & custom criteria
 │   │   │   └── logging_config.py   # ✅ Structured logging
+│   │   ├── persistence/             # ✅ Data persistence infrastructure
+│   │   │   ├── json_repository.py  # ✅ JSON-based data storage
+│   │   │   ├── persistence_service.py # ✅ Persistence orchestration
+│   │   │   └── migration.py        # ✅ Data migration support
 │   │   └── resilience/             # ✅ Production reliability patterns
 │   │       ├── retry_strategies.py # ✅ Exponential backoff retry
 │   │       ├── fallback_manager.py # ✅ Circuit breaker & fallback
 │   │       ├── timeout_manager.py  # ✅ Request timeout handling
 │   │       └── error_classification.py # ✅ Error categorization
 │   └── presentation/                # User interfaces
-│       ├── cli/                     # ✅ Command-line interface
-│       └── (future: web, api)       # 🔄 Planned REST API
+│       ├── cli/                     # ✅ Enhanced CLI with data management
+│       │   └── main.py             # ✅ Data commands & custom criteria support
+│       └── (future: web, api)       # 🔄 Planned REST API (Phase 3)
 ├── tests/                           # ✅ Comprehensive test suite
 │   ├── unit/                        # ✅ Layer-separated unit tests
-│   │   ├── domain/
+│   │   ├── domain/                  # ✅ Custom criteria & persistence tests
 │   │   ├── application/
-│   │   └── infrastructure/
+│   │   └── infrastructure/          # ✅ Persistence infrastructure tests
 │   └── integration/                 # ✅ Cross-layer integration tests
 └── docs/                           # ✅ Layered documentation strategy
 ```
@@ -192,6 +218,7 @@ tests/
 #### Component Interaction Patterns
 
 **Request Processing Flow (Current DDD Implementation)**:
+
 ```
 1. CLI Input (presentation/cli/__main__.py)
    ↓
@@ -217,6 +244,7 @@ tests/
 ```
 
 **Error Handling Flow (Current Implementation)**:
+
 ```
 Error Detection (All Layers)
    ↓
@@ -250,6 +278,7 @@ Graceful Degradation (infrastructure/resilience/fallback_manager.py)
 ### 1. Domain Layer
 
 #### Evaluation Models
+
 ```python
 @dataclass
 class Evaluation:
@@ -262,7 +291,7 @@ class Evaluation:
     created_at: datetime
     completed_at: Optional[datetime]
 
-@dataclass  
+@dataclass
 class CandidateResponse:
     prompt: str
     response: str
@@ -278,12 +307,14 @@ class EvaluationResult:
 ```
 
 #### Prompt Templates
+
 - **DirectScoringTemplate**: Single response evaluation
 - **PairwiseComparisonTemplate**: A vs B comparison
 - **ReferenceBasedTemplate**: Comparison with golden examples
 - **CustomTemplate**: User-defined evaluation criteria
 
 #### Judge Models
+
 - **LLMJudge**: Core evaluation engine
 - **EnsembleJudge**: Multiple judge consensus
 - **CalibratedJudge**: Bias-corrected evaluations
@@ -291,6 +322,7 @@ class EvaluationResult:
 ### 2. Application Layer
 
 #### Evaluation Service
+
 ```python
 class EvaluationService:
     def evaluate_single(self, request: SingleEvaluationRequest) -> EvaluationResult
@@ -300,6 +332,7 @@ class EvaluationService:
 ```
 
 #### Batch Processing
+
 ```python
 class BatchProcessor:
     def process_evaluations(self, batch: EvaluationBatch) -> BatchResult
@@ -308,6 +341,7 @@ class BatchProcessor:
 ```
 
 #### Analytics Service
+
 ```python
 class AnalyticsService:
     def get_evaluation_metrics(self, timeframe: TimeRange) -> EvaluationMetrics
@@ -318,6 +352,7 @@ class AnalyticsService:
 ### 3. Infrastructure Layer
 
 #### LLM Clients
+
 ```python
 class LLMClient(ABC):
     def generate_evaluation(self, prompt: str) -> LLMResponse
@@ -330,11 +365,13 @@ class LocalClient(LLMClient): ...
 ```
 
 #### Data Storage
+
 - **Primary Storage**: PostgreSQL for evaluation history and metadata
 - **Cache Layer**: Redis for frequently accessed data
 - **File Storage**: S3-compatible for large evaluation datasets
 
 #### Monitoring & Observability
+
 - **Structured Logging**: JSON logs with correlation IDs
 - **Metrics Collection**: Prometheus-compatible metrics
 - **Health Checks**: Service availability monitoring
@@ -343,6 +380,7 @@ class LocalClient(LLMClient): ...
 ## Data Flow
 
 ### Single Evaluation Flow
+
 1. **Request Reception**: Validate and normalize evaluation request
 2. **Prompt Generation**: Select template and generate judge prompt
 3. **LLM Invocation**: Call judge LLM with retry logic
@@ -350,7 +388,8 @@ class LocalClient(LLMClient): ...
 5. **Result Storage**: Persist evaluation result and metadata
 6. **Response Return**: Return structured evaluation result
 
-### Batch Processing Flow  
+### Batch Processing Flow
+
 1. **Batch Creation**: Queue evaluation requests
 2. **Parallel Processing**: Distribute across worker threads
 3. **Result Aggregation**: Collect and combine results
@@ -360,18 +399,21 @@ class LocalClient(LLMClient): ...
 ## Scalability Considerations
 
 ### Horizontal Scaling
+
 - **Stateless Services**: All application services are stateless
 - **Load Balancing**: Distribute requests across service instances
 - **Queue-Based Processing**: Decouple request handling from processing
 - **Database Sharding**: Partition data across multiple databases
 
 ### Performance Optimization
+
 - **Connection Pooling**: Reuse LLM API connections
 - **Response Caching**: Cache identical evaluation requests
 - **Batch API Usage**: Group multiple requests to LLM providers
 - **Async Processing**: Non-blocking I/O for concurrent requests
 
 ### Resource Management
+
 - **Rate Limiting**: Respect LLM provider API limits
 - **Circuit Breakers**: Protect against cascading failures
 - **Timeout Handling**: Graceful handling of slow requests
@@ -380,18 +422,21 @@ class LocalClient(LLMClient): ...
 ## Security Architecture
 
 ### Authentication & Authorization
+
 - **API Keys**: Secure access to system endpoints
 - **Role-Based Access**: Different permission levels
 - **Audit Logging**: Track all user actions
 - **Rate Limiting**: Prevent abuse and DoS attacks
 
 ### Data Protection
+
 - **Encryption**: TLS in transit, AES-256 at rest
 - **PII Handling**: Automatic detection and redaction
 - **Data Retention**: Configurable retention policies
 - **Backup & Recovery**: Regular backups with encryption
 
 ### Infrastructure Security
+
 - **Network Segmentation**: Isolate components
 - **Container Security**: Secure container images
 - **Secrets Management**: Encrypted credential storage
@@ -400,11 +445,13 @@ class LocalClient(LLMClient): ...
 ## Deployment Architecture
 
 ### Development Environment
+
 - **Local Development**: Docker Compose for full stack
 - **Testing**: Isolated test environments with mock services
 - **CI/CD**: Automated testing and deployment pipelines
 
 ### Production Environment
+
 - **Container Orchestration**: Kubernetes for service management
 - **Service Mesh**: Istio for service-to-service communication
 - **Monitoring Stack**: Prometheus, Grafana, ELK stack
@@ -413,18 +460,21 @@ class LocalClient(LLMClient): ...
 ## Integration Patterns
 
 ### API Integration
+
 - **REST APIs**: Standard HTTP APIs for synchronous operations
 - **WebSocket APIs**: Real-time evaluation status updates
 - **Webhook APIs**: Callback notifications for batch completions
 - **GraphQL**: Flexible query interface for analytics
 
 ### Message Queue Integration
+
 - **Apache Kafka**: High-throughput event streaming
 - **RabbitMQ**: Reliable message queuing
 - **AWS SQS**: Cloud-native queuing service
 - **Redis Streams**: Lightweight message streaming
 
 ### External Service Integration
+
 - **LLM Providers**: OpenAI, Anthropic, Cohere, local models
 - **Storage Providers**: AWS S3, Google Cloud Storage, MinIO
 - **Monitoring Services**: DataDog, New Relic, CloudWatch

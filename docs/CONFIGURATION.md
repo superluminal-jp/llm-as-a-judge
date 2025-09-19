@@ -37,6 +37,15 @@ ENABLE_AUDIT_LOGGING=true
 # Multi-Criteria Configuration
 DEFAULT_CRITERIA_TYPE=comprehensive
 MULTI_CRITERIA_TIMEOUT=60
+USE_EQUAL_WEIGHTS=true
+
+# Data Persistence Configuration
+PERSISTENCE_ENABLED=true
+PERSISTENCE_STORAGE_PATH=./data
+PERSISTENCE_CACHE_ENABLED=true
+PERSISTENCE_CACHE_TTL_HOURS=24
+PERSISTENCE_MAX_CACHE_SIZE=1000
+PERSISTENCE_AUTO_CLEANUP=true
 ```
 
 ### Criteria Type Options
@@ -79,7 +88,16 @@ Create `config.json`:
     "enabled_by_default": true,
     "timeout": 60,
     "fallback_on_error": true,
-    "default_criteria_type": "comprehensive"
+    "default_criteria_type": "comprehensive",
+    "use_equal_weights": true
+  },
+  "persistence_settings": {
+    "enabled": true,
+    "storage_path": "./data",
+    "cache_enabled": true,
+    "cache_ttl_hours": 24,
+    "max_cache_size": 1000,
+    "auto_cleanup": true
   },
   "batch_processing": {
     "max_concurrent": 10,
@@ -123,6 +141,15 @@ config = LLMConfig(
     # Multi-Criteria Settings
     enable_multi_criteria_by_default=True,
     multi_criteria_timeout=60,
+    use_equal_weights=True,
+
+    # Data Persistence Settings
+    persistence_enabled=True,
+    persistence_storage_path="./data",
+    persistence_cache_enabled=True,
+    persistence_cache_ttl_hours=24,
+    persistence_max_cache_size=1000,
+    persistence_auto_cleanup=True,
 
     # Logging
     log_level="INFO",
@@ -173,6 +200,7 @@ judge = LLMJudge(config=config)
 | `fallback_on_parsing_error`        | bool | True            | Fallback to mock evaluation on JSON parsing errors                       |
 | `validate_criteria_responses`      | bool | True            | Validate LLM responses against expected criteria                         |
 | `criteria_weights_validation`      | bool | False           | Validate that criteria weights sum to 1.0                                |
+| `use_equal_weights`                | bool | True            | Use equal weights for all criteria by default                            |
 
 ### Request and Timeout Settings
 
@@ -205,6 +233,17 @@ judge = LLMJudge(config=config)
 | `log_file`             | str  | None     | Log file path (None for console only)       |
 | `log_format`           | str  | Standard | Log message format                          |
 | `log_request_details`  | bool | False    | Log detailed request/response information   |
+
+### Data Persistence Configuration
+
+| Parameter                     | Type | Default  | Description                       |
+| ----------------------------- | ---- | -------- | --------------------------------- |
+| `persistence_enabled`         | bool | True     | Enable data persistence           |
+| `persistence_storage_path`    | str  | "./data" | Path for storing evaluation data  |
+| `persistence_cache_enabled`   | bool | True     | Enable result caching             |
+| `persistence_cache_ttl_hours` | int  | 24       | Cache time-to-live in hours       |
+| `persistence_max_cache_size`  | int  | 1000     | Maximum number of cached results  |
+| `persistence_auto_cleanup`    | bool | True     | Automatically clean expired cache |
 
 ### Performance and Caching
 
