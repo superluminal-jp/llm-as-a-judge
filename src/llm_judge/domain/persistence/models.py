@@ -79,7 +79,7 @@ class EvaluationMetadata:
         )
 
 
-@dataclass(frozen=True)
+@dataclass
 class EvaluationRecord:
     """Complete evaluation record with metadata."""
 
@@ -93,6 +93,7 @@ class EvaluationRecord:
     provider: str
     evaluation_time_ms: int
     evaluated_at: datetime
+    metadata: Optional[EvaluationMetadata] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -145,6 +146,12 @@ class EvaluationRecord:
 
         aggregated = AggregatedScore(
             overall_score=data["aggregated"]["overall_score"],
+            weighted_score=data["aggregated"].get(
+                "weighted_score", data["aggregated"]["overall_score"]
+            ),
+            confidence=data["aggregated"].get("confidence", 0.8),
+            min_score=data["aggregated"].get("min_score", 1),
+            max_score=data["aggregated"].get("max_score", 5),
         )
 
         return MultiCriteriaResult(

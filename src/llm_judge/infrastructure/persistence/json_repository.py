@@ -8,7 +8,7 @@ caching, and history management.
 import json
 import os
 import shutil
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import UUID
@@ -75,7 +75,7 @@ class JsonEvaluationRepository(EvaluationRepository):
 
     def _update_index(self, record: EvaluationRecord, operation: str = "add"):
         """Update search index."""
-        record_id = str(record.metadata.id)
+        record_id = str(record.id)
         record_hash = record.get_hash()
 
         if operation == "add":
@@ -114,7 +114,7 @@ class JsonEvaluationRepository(EvaluationRepository):
 
             # Remove from other indexes
             for index_name in ["by_date", "by_model", "by_judge_model", "by_tags"]:
-                for key, record_ids in self.index[index_name].items():
+                for key, record_ids in list(self.index[index_name].items()):
                     if record_id in record_ids:
                         record_ids.remove(record_id)
                         if not record_ids:
@@ -127,9 +127,9 @@ class JsonEvaluationRepository(EvaluationRepository):
         records = self._load_records()
 
         # Check if record already exists
-        record_id = str(record.metadata.id)
+        record_id = str(record.id)
         existing_index = next(
-            (i for i, r in enumerate(records) if r["metadata"]["id"] == record_id), None
+            (i for i, r in enumerate(records) if r.get("id") == record_id), None
         )
 
         record_dict = record.to_dict()
@@ -151,7 +151,7 @@ class JsonEvaluationRepository(EvaluationRepository):
         record_id_str = str(record_id)
 
         for record_dict in records:
-            if record_dict["metadata"]["id"] == record_id_str:
+            if record_dict.get("id") == record_id_str:
                 return EvaluationRecord.from_dict(record_dict)
 
         return None
@@ -200,7 +200,10 @@ class JsonEvaluationRepository(EvaluationRepository):
             filtered_records.append(record)
 
         # Sort by creation date (newest first)
-        filtered_records.sort(key=lambda r: r.metadata.created_at, reverse=True)
+        filtered_records.sort(
+            key=lambda r: r.metadata.created_at if r.metadata else r.evaluated_at,
+            reverse=True,
+        )
 
         # Pagination
         start_index = (page - 1) * page_size
@@ -254,7 +257,7 @@ class JsonEvaluationRepository(EvaluationRepository):
         record_id_str = str(record_id)
 
         # Remove from records
-        records = [r for r in records if r["metadata"]["id"] != record_id_str]
+        records = [r for r in records if r.get("id") != record_id_str]
 
         # Update index
         self._update_index(record, "remove")
@@ -385,10 +388,12 @@ class JsonCacheRepository(CacheRepository):
         cache = self._load_cache()
 
         expires_at = None
-        if ttl_hours:
-            expires_at = datetime.now(timezone.utc).replace(
-                hour=datetime.now(timezone.utc).hour + ttl_hours
-            )
+        if ttl_hours is not None:
+            if ttl_hours == 0:
+                # For TTL of 0, set expiration to past time to make it immediately expired
+                expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+            else:
+                expires_at = datetime.now(timezone.utc) + timedelta(hours=ttl_hours)
 
         entry = CacheEntry(
             key=key,

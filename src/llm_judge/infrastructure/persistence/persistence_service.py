@@ -61,13 +61,15 @@ class PersistenceServiceImpl(PersistenceService):
 
         # Create evaluation record
         record = EvaluationRecord(
-            metadata=eval_metadata,
+            id=str(eval_metadata.id),
             candidate=candidate,
             result=result,
             criteria_hash=criteria_hash,
             judge_model=judge_model,
             provider=provider,
             evaluation_time_ms=evaluation_time_ms,
+            evaluated_at=eval_metadata.created_at,
+            metadata=eval_metadata,
         )
 
         # Save to storage
@@ -179,6 +181,10 @@ class PersistenceServiceImpl(PersistenceService):
     async def cleanup_cache(self) -> int:
         """Clean up expired cache entries."""
         return await self.cache_repo.cleanup_expired()
+
+    async def clear_cache(self) -> None:
+        """Clear all cache entries."""
+        await self.cache_repo.clear()
 
     async def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""

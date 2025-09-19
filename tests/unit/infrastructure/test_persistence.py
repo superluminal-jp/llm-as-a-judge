@@ -5,21 +5,36 @@ Unit tests for persistence infrastructure components.
 import json
 import tempfile
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 from unittest.mock import AsyncMock, Mock, patch
+from uuid import UUID
 
 import pytest
 
 from src.llm_judge.domain.persistence.models import (
     PersistenceConfig,
     EvaluationRecord,
+    CacheEntry,
 )
 from src.llm_judge.domain.evaluation.results import (
     MultiCriteriaResult,
     CriterionScore,
     AggregatedScore,
 )
+
+
+# Define CandidateResponse locally to avoid circular imports
+@dataclass
+class CandidateResponse:
+    """A response from an LLM that needs to be evaluated."""
+
+    prompt: str
+    response: str
+    model: str = "unknown"
+
 
 # CandidateResponse will be imported where needed to avoid circular imports
 from src.llm_judge.infrastructure.persistence.json_repository import (
@@ -83,8 +98,19 @@ class TestEvaluationRecord:
                     criterion_name="clarity", score=3.5, reasoning="Fair"
                 ),
             },
-            aggregated=AggregatedScore(overall_score=3.75),
+            aggregated=AggregatedScore(
+                overall_score=3.75,
+                weighted_score=3.75,
+                confidence=0.8,
+                min_score=3,
+                max_score=5,
+            ),
         )
+
+        # Create metadata
+        from src.llm_judge.domain.persistence.models import EvaluationMetadata
+
+        metadata = EvaluationMetadata()
 
         record = EvaluationRecord(
             id=str(uuid.uuid4()),
@@ -95,6 +121,7 @@ class TestEvaluationRecord:
             provider="openai",
             evaluation_time_ms=1234567890,
             evaluated_at=datetime.now(timezone.utc),
+            metadata=metadata,
         )
 
         assert record.candidate == candidate
@@ -121,7 +148,13 @@ class TestEvaluationRecord:
                     criterion_name="accuracy", score=4.0, reasoning="Good"
                 ),
             },
-            aggregated=AggregatedScore(overall_score=4.0),
+            aggregated=AggregatedScore(
+                overall_score=4.0,
+                weighted_score=4.0,
+                confidence=0.9,
+                min_score=3,
+                max_score=5,
+            ),
         )
 
         record = EvaluationRecord(
@@ -221,8 +254,19 @@ class TestJsonEvaluationRepository:
                     criterion_name="accuracy", score=4.0, reasoning="Good"
                 ),
             },
-            aggregated=AggregatedScore(overall_score=4.0),
+            aggregated=AggregatedScore(
+                overall_score=4.0,
+                weighted_score=4.0,
+                confidence=0.9,
+                min_score=3,
+                max_score=5,
+            ),
         )
+
+        # Create metadata
+        from src.llm_judge.domain.persistence.models import EvaluationMetadata
+
+        metadata = EvaluationMetadata()
 
         return EvaluationRecord(
             id="test-id",
@@ -233,30 +277,34 @@ class TestJsonEvaluationRepository:
             provider="openai",
             evaluation_time_ms=1234567890,
             evaluated_at=datetime.now(timezone.utc),
+            metadata=metadata,
         )
 
     @pytest.mark.asyncio
     async def test_save_evaluation(self, repository, sample_record):
         """Test saving evaluation record."""
-        await repository.save_evaluation(sample_record)
+        await repository.save(sample_record)
 
         # Verify file was created
         storage_path = Path(repository.storage_path)
         assert storage_path.exists()
 
         # Verify content
-        with open(storage_path, "r", encoding="utf-8") as f:
+        records_file = storage_path / "evaluations.json"
+        with open(records_file, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        assert data["test-id"]["id"] == "test-id"
-        assert data["test-id"]["candidate"]["prompt"] == "Test prompt"
+        # Find the record with id "test-id"
+        test_record = next((r for r in data if r["id"] == "test-id"), None)
+        assert test_record is not None
+        assert test_record["candidate"]["prompt"] == "Test prompt"
 
     @pytest.mark.asyncio
     async def test_get_evaluation(self, repository, sample_record):
         """Test retrieving evaluation record."""
-        await repository.save_evaluation(sample_record)
+        await repository.save(sample_record)
 
-        retrieved = await repository.get_evaluation("test-id")
+        retrieved = await repository.get_by_id("test-id")
 
         assert retrieved is not None
         assert retrieved.id == "test-id"
@@ -265,7 +313,9 @@ class TestJsonEvaluationRepository:
     @pytest.mark.asyncio
     async def test_get_evaluation_not_found(self, repository):
         """Test retrieving non-existent evaluation record."""
-        retrieved = await repository.get_evaluation("non-existent")
+        retrieved = await repository.get_by_id(
+            UUID("00000000-0000-0000-0000-000000000000")
+        )
 
         assert retrieved is None
 
@@ -274,6 +324,11 @@ class TestJsonEvaluationRepository:
         """Test listing evaluation records."""
         # Add multiple records
         record1 = sample_record
+        # Create metadata for record2
+        from src.llm_judge.domain.persistence.models import EvaluationMetadata
+
+        metadata2 = EvaluationMetadata()
+
         record2 = EvaluationRecord(
             id="test-id-2",
             candidate=sample_record.candidate,
@@ -283,12 +338,14 @@ class TestJsonEvaluationRepository:
             provider="anthropic",
             evaluation_time_ms=1234567891,
             evaluated_at=datetime.now(timezone.utc),
+            metadata=metadata2,
         )
 
-        await repository.save_evaluation(record1)
-        await repository.save_evaluation(record2)
+        await repository.save(record1)
+        await repository.save(record2)
 
-        records = await repository.list_evaluations()
+        history = await repository.list()
+        records = history.records
 
         assert len(records) == 2
         assert any(r.id == "test-id" for r in records)
@@ -298,7 +355,10 @@ class TestJsonEvaluationRepository:
     async def test_list_evaluations_with_limit(self, repository, sample_record):
         """Test listing evaluation records with limit."""
         # Add multiple records
+        from src.llm_judge.domain.persistence.models import EvaluationMetadata
+
         for i in range(5):
+            metadata = EvaluationMetadata()
             record = EvaluationRecord(
                 id=f"test-id-{i}",
                 candidate=sample_record.candidate,
@@ -308,27 +368,29 @@ class TestJsonEvaluationRepository:
                 provider="openai",
                 evaluation_time_ms=1234567890 + i,
                 evaluated_at=datetime.now(timezone.utc),
+                metadata=metadata,
             )
-            await repository.save_evaluation(record)
+            await repository.save(record)
 
-        records = await repository.list_evaluations(limit=3)
+        history = await repository.list(page_size=3)
+        records = history.records
 
         assert len(records) == 3
 
     @pytest.mark.asyncio
     async def test_delete_evaluation(self, repository, sample_record):
         """Test deleting evaluation record."""
-        await repository.save_evaluation(sample_record)
+        await repository.save(sample_record)
 
         # Verify record exists
-        retrieved = await repository.get_evaluation("test-id")
+        retrieved = await repository.get_by_id("test-id")
         assert retrieved is not None
 
         # Delete record
-        await repository.delete_evaluation("test-id")
+        await repository.delete("test-id")
 
         # Verify record is deleted
-        retrieved = await repository.get_evaluation("test-id")
+        retrieved = await repository.get_by_id("test-id")
         assert retrieved is None
 
 
@@ -378,7 +440,13 @@ class TestPersistenceServiceImpl:
                     criterion_name="accuracy", score=4.0, reasoning="Good"
                 ),
             },
-            aggregated=AggregatedScore(overall_score=4.0),
+            aggregated=AggregatedScore(
+                overall_score=4.0,
+                weighted_score=4.0,
+                confidence=0.9,
+                min_score=3,
+                max_score=5,
+            ),
         )
 
     @pytest.mark.asyncio
@@ -395,9 +463,9 @@ class TestPersistenceServiceImpl:
         )
 
         # Verify record was saved
-        records = await service.list_evaluations()
-        assert len(records) == 1
-        assert records[0].candidate.prompt == "Test prompt"
+        history = await service.list_evaluations()
+        assert len(history.records) == 1
+        assert history.records[0].candidate.prompt == "Test prompt"
 
     @pytest.mark.asyncio
     async def test_get_evaluation_cache_hit(
@@ -459,17 +527,18 @@ class TestPersistenceServiceImpl:
         )
         assert cached is not None
 
-        # Clean cache
-        await service.clean_cache()
+        # Clear cache
+        await service.clear_cache()
 
-        # Verify cache is empty
-        cached = await service.get_evaluation(
-            prompt=sample_candidate.prompt,
-            response=sample_candidate.response,
-            criteria_hash="test_hash",
-            judge_model="gpt-4",
+        # Verify cache is empty by checking cache directly
+        cache_key = await service.cache_repo.generate_key(
+            sample_candidate.prompt,
+            sample_candidate.response,
+            "test_hash",
+            "gpt-4",
         )
-        assert cached is None
+        cached_entry = await service.cache_repo.get(cache_key)
+        assert cached_entry is None
 
     @pytest.mark.asyncio
     async def test_list_evaluations(self, service, sample_candidate, sample_result):
@@ -489,16 +558,16 @@ class TestPersistenceServiceImpl:
                 evaluation_time_ms=1234567890 + i,
             )
 
-        records = await service.list_evaluations(limit=2)
+        history = await service.list_evaluations(page_size=2)
 
-        assert len(records) == 2
+        assert len(history.records) == 2
 
     @pytest.mark.asyncio
     async def test_cache_ttl_expiration(self, service, sample_candidate, sample_result):
         """Test cache TTL expiration."""
         # Create service with very short TTL
         short_ttl_config = PersistenceConfig(
-            storage_path=service.repository.storage_path,
+            storage_path=service.evaluation_repo.storage_path,
             cache_enabled=True,
             cache_ttl_hours=0,  # 0 hours = immediate expiration
             max_cache_size=10,
@@ -516,13 +585,23 @@ class TestPersistenceServiceImpl:
             evaluation_time_ms=1234567890,
         )
 
-        # Try to get from cache (should be expired)
-        cached = await short_ttl_service.get_evaluation(
-            prompt=sample_candidate.prompt,
-            response=sample_candidate.response,
-            criteria_hash="test_hash",
-            judge_model="gpt-4",
+        # Check cache directly (bypassing get() which removes expired entries)
+        cache_key = await short_ttl_service.cache_repo.generate_key(
+            sample_candidate.prompt,
+            sample_candidate.response,
+            "test_hash",
+            "gpt-4",
         )
 
-        # Should return None due to TTL expiration
-        assert cached is None
+        # Access cache directly to check if entry exists and is expired
+        cache = short_ttl_service.cache_repo._load_cache()
+        assert cache_key in cache
+
+        # Create CacheEntry from raw cache data to check expiration
+        entry_dict = cache[cache_key]
+        cached_entry = CacheEntry.from_dict(entry_dict)
+        assert cached_entry.is_expired()
+
+        # Verify that get() returns None for expired entries
+        retrieved_entry = await short_ttl_service.cache_repo.get(cache_key)
+        assert retrieved_entry is None
