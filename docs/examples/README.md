@@ -64,6 +64,75 @@ asyncio.run(compare_responses())
 - **[FastAPI Integration](integration.md#fastapi)** - Modern API integration
 - **[CLI Integration](integration.md#cli)** - Command-line integration
 
+## 📁 Criteria File Examples
+
+### Default Criteria
+
+```json
+{
+  "name": "Default Evaluation Criteria",
+  "description": "Comprehensive evaluation criteria for general use",
+  "criteria": [
+    {
+      "name": "accuracy",
+      "description": "Factual correctness and truthfulness",
+      "weight": 0.25,
+      "evaluation_prompt": "Rate the factual accuracy of this response",
+      "examples": {
+        "1": "Contains significant factual errors",
+        "5": "Completely accurate and truthful"
+      }
+    },
+    {
+      "name": "completeness",
+      "description": "Thoroughness and comprehensiveness",
+      "weight": 0.2,
+      "evaluation_prompt": "How complete is this response?",
+      "examples": {
+        "1": "Very incomplete, missing key information",
+        "5": "Comprehensive and thorough"
+      }
+    }
+  ]
+}
+```
+
+### Custom Criteria
+
+```json
+{
+  "name": "Technical Code Review",
+  "description": "Criteria for evaluating technical code responses",
+  "criteria": [
+    {
+      "name": "correctness",
+      "description": "Code correctness and functionality",
+      "weight": 0.4,
+      "evaluation_prompt": "Is the code functionally correct?",
+      "domain_specific": true,
+      "metadata": {
+        "category": "technical",
+        "importance": "high"
+      }
+    },
+    {
+      "name": "readability",
+      "description": "Code readability and style",
+      "weight": 0.3,
+      "evaluation_prompt": "How readable is the code?",
+      "domain_specific": true
+    },
+    {
+      "name": "efficiency",
+      "description": "Performance and efficiency",
+      "weight": 0.3,
+      "evaluation_prompt": "How efficient is the code?",
+      "domain_specific": true
+    }
+  ]
+}
+```
+
 ## 🎯 Use Case Examples
 
 ### Research and Development
@@ -95,10 +164,27 @@ ANTHROPIC_API_KEY=your-anthropic-key
 DEFAULT_PROVIDER=anthropic
 ```
 
+### Criteria Configuration
+
+```bash
+# Use default criteria
+python -m src.llm_judge evaluate "Question" "Answer" --criteria-file criteria/default.json
+
+# Use custom criteria
+python -m src.llm_judge evaluate "Question" "Answer" --criteria-file criteria/custom.json
+
+# Use criteria template
+python -m src.llm_judge evaluate "Question" "Answer" --criteria-file criteria/template.json
+```
+
 ### Programmatic Configuration
 
 ```python
 from src.llm_judge.infrastructure.config.config import LLMConfig
+from src.llm_judge.domain.evaluation.criteria import EvaluationCriteria
+
+# Load criteria from file
+criteria = EvaluationCriteria.from_file("criteria/default.json")
 
 config = LLMConfig(
     openai_api_key="sk-your-key",

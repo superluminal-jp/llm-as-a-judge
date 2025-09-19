@@ -39,7 +39,7 @@ class LLMConfig:
     max_retries: int = 3
     retry_delay: int = 1
     log_level: str = "INFO"
-    default_criteria_type: str = "comprehensive"
+    default_criteria_type: str = "balanced"
 
     # Criteria weight configuration
     criteria_weights: Optional[str] = (
@@ -187,7 +187,13 @@ class LLMConfig:
             )
 
         # Validate default criteria type
-        valid_criteria_types = ["comprehensive", "basic", "technical", "creative"]
+        valid_criteria_types = [
+            "default",
+            "balanced",
+            "basic",
+            "technical",
+            "creative",
+        ]
         if self.default_criteria_type not in valid_criteria_types:
             errors.append(
                 f"Invalid default_criteria_type '{self.default_criteria_type}'. Must be one of: {valid_criteria_types}"
@@ -268,7 +274,20 @@ class LLMConfig:
 
 
 def load_config() -> LLMConfig:
-    """Load configuration from environment variables and .env file."""
+    """Load configuration from environment variables, .env file, and config.json."""
+
+    # Load config.json file if available
+    config_json_path = Path("config.json")
+    config_data = {}
+    if config_json_path.exists():
+        try:
+            import json
+
+            with open(config_json_path, "r", encoding="utf-8") as f:
+                config_data = json.load(f)
+            logging.info(f"Loaded configuration from {config_json_path}")
+        except Exception as e:
+            logging.warning(f"Failed to load config.json: {e}")
 
     # Load .env file if available
     if DOTENV_AVAILABLE:
@@ -302,19 +321,44 @@ def load_config() -> LLMConfig:
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
             aws_session_token=os.getenv("AWS_SESSION_TOKEN"),  # Optional
             aws_region=os.getenv("AWS_REGION", "us-east-1"),
-            default_provider=os.getenv("DEFAULT_PROVIDER", "openai"),
-            openai_model=os.getenv("OPENAI_MODEL", "gpt-5-2025-08-07"),
-            anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
-            bedrock_model=os.getenv("BEDROCK_MODEL", "amazon.nova-premier-v1:0"),
+            default_provider=os.getenv(
+                "DEFAULT_PROVIDER", config_data.get("default_provider", "openai")
+            ),
+            openai_model=os.getenv(
+                "OPENAI_MODEL", config_data.get("openai_model", "gpt-5-2025-08-07")
+            ),
+            anthropic_model=os.getenv(
+                "ANTHROPIC_MODEL",
+                config_data.get("anthropic_model", "claude-sonnet-4-20250514"),
+            ),
+            bedrock_model=os.getenv(
+                "BEDROCK_MODEL",
+                config_data.get("bedrock_model", "amazon.nova-premier-v1:0"),
+            ),
             gpt5_reasoning_effort=os.getenv("GPT5_REASONING_EFFORT", "medium"),
             anthropic_temperature=anthropic_temperature,
             anthropic_top_p=anthropic_top_p,
             bedrock_temperature=bedrock_temperature,
-            request_timeout=int(os.getenv("REQUEST_TIMEOUT", "30")),
-            max_retries=int(os.getenv("MAX_RETRIES", "3")),
-            retry_delay=int(os.getenv("RETRY_DELAY", "1")),
-            log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
-            default_criteria_type=os.getenv("DEFAULT_CRITERIA_TYPE", "comprehensive"),
+            request_timeout=int(
+                os.getenv("REQUEST_TIMEOUT", config_data.get("request_timeout", "30"))
+            ),
+            max_retries=int(
+                os.getenv("MAX_RETRIES", config_data.get("max_retries", "3"))
+            ),
+            retry_delay=int(
+                os.getenv("RETRY_DELAY", config_data.get("retry_delay", "1"))
+            ),
+            log_level=os.getenv(
+                "LOG_LEVEL", config_data.get("log_level", "INFO")
+            ).upper(),
+            default_criteria_type=os.getenv(
+                "DEFAULT_CRITERIA_TYPE",
+                config_data.get("default_criteria_type", "default"),
+            ),
+            use_equal_weights=os.getenv(
+                "USE_EQUAL_WEIGHTS", str(config_data.get("use_equal_weights", False))
+            ).lower()
+            == "true",
             # Enhanced retry configuration
             retry_max_attempts=int(os.getenv("RETRY_MAX_ATTEMPTS", "3")),
             retry_base_delay=float(os.getenv("RETRY_BASE_DELAY", "1.0")),

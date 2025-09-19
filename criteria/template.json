@@ -1,0 +1,37 @@
+{
+  "name": "Custom Evaluation Configuration Template",
+  "description": "Template for creating custom evaluation configurations",
+  "version": "1.0",
+  "author": "Your Name",
+  "created": "2024-01-01",
+  "default_provider": "openai",
+  "openai_model": "gpt-4",
+  "anthropic_model": "claude-3-sonnet-20240229",
+  "request_timeout": 30,
+  "max_retries": 3,
+  "log_level": "INFO",
+  "use_equal_weights": false,
+  "criteria_weights": "criterion1:0.5,criterion2:0.3,criterion3:0.2",
+  "criteria": [
+    {
+      "name": "criterion_name",
+      "description": "What this criterion measures",
+      "weight": 0.5,
+      "evaluation_prompt": "Specific prompt for the LLM judge to evaluate this criterion",
+      "examples": {
+        "1": "Poor example description",
+        "2": "Below average example",
+        "3": "Average example",
+        "4": "Good example",
+        "5": "Excellent example"
+      },
+      "domain_specific": false,
+      "requires_context": false,
+      "metadata": {
+        "importance": "medium",
+        "category": "content_quality",
+        "tags": ["tag1", "tag2"]
+      }
+    }
+  ]
+}

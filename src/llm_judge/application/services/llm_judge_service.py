@@ -5,6 +5,7 @@ Based on https://www.evidentlyai.com/llm-guide/llm-as-a-judge
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, Any, Optional
 import logging
 import asyncio
@@ -121,19 +122,49 @@ class LLMJudge:
 
     def _get_default_criteria(self, criteria_type: str) -> EvaluationCriteria:
         """Get default criteria based on type."""
-        if criteria_type == "comprehensive":
-            return DefaultCriteria.comprehensive()
-        elif criteria_type == "basic":
-            return DefaultCriteria.basic()
-        elif criteria_type == "technical":
-            return DefaultCriteria.technical()
-        elif criteria_type == "creative":
-            return DefaultCriteria.creative()
-        else:
+        try:
+            # Try to load from criteria file first
+            if criteria_type.endswith(".json"):
+                criteria_file_path = Path(criteria_type)
+                if criteria_file_path.exists():
+                    from ..presentation.cli.main import load_unified_config
+
+                    custom_criteria, config_data = load_unified_config(
+                        criteria_file_path
+                    )
+                    if custom_criteria:
+                        return custom_criteria
+
+            # Try to find in criteria directory
+            criteria_file_path = Path(f"criteria/{criteria_type}.json")
+            if criteria_file_path.exists():
+                from ..presentation.cli.main import load_unified_config
+
+                custom_criteria, config_data = load_unified_config(criteria_file_path)
+                if custom_criteria:
+                    return custom_criteria
+
+            # Fall back to predefined types
+            if criteria_type == "default":
+                return DefaultCriteria.default()
+            elif criteria_type == "balanced":
+                return DefaultCriteria.balanced()
+            elif criteria_type == "basic":
+                return DefaultCriteria.basic()
+            elif criteria_type == "technical":
+                return DefaultCriteria.technical()
+            elif criteria_type == "creative":
+                return DefaultCriteria.creative()
+            else:
+                logging.warning(
+                    f"Unknown criteria type '{criteria_type}', falling back to default"
+                )
+                return DefaultCriteria.default()
+        except Exception as e:
             logging.warning(
-                f"Unknown criteria type '{criteria_type}', falling back to comprehensive"
+                f"Error loading criteria '{criteria_type}': {e}, falling back to default"
             )
-            return DefaultCriteria.comprehensive()
+            return DefaultCriteria.default()
 
     async def evaluate_response(
         self,
@@ -362,7 +393,6 @@ Respond in JSON: {{"winner": "A"/"B"/"tie", "reasoning": "explanation", "confide
         self,
         candidate: CandidateResponse,
         criteria: Optional[EvaluationCriteria] = None,
-        criteria_type: Optional[str] = None,
         custom_criteria: Optional[EvaluationCriteria] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> MultiCriteriaResult:
@@ -372,7 +402,6 @@ Respond in JSON: {{"winner": "A"/"B"/"tie", "reasoning": "explanation", "confide
         Args:
             candidate: The response to evaluate
             criteria: Custom evaluation criteria (if None, uses default)
-            criteria_type: Type of default criteria to use ("comprehensive", "basic", "technical", "creative")
             custom_criteria: Pre-configured criteria with custom weights (takes precedence over criteria)
 
         Returns:
@@ -382,8 +411,7 @@ Respond in JSON: {{"winner": "A"/"B"/"tie", "reasoning": "explanation", "confide
         if custom_criteria is not None:
             criteria = custom_criteria
         elif criteria is None:
-            criteria_type = criteria_type or self.config.default_criteria_type
-            criteria = self._get_default_criteria(criteria_type)
+            criteria = DefaultCriteria.default()
 
         logging.info(
             f"Starting multi-criteria evaluation with {len(criteria.criteria)} criteria"

@@ -215,6 +215,57 @@ src/llm_judge/
 2. **UpdateCriteriaUseCase**: Update existing criteria
 3. **DeleteCriteriaUseCase**: Delete criteria
 4. **ListCriteriaUseCase**: List available criteria
+5. **LoadCriteriaFromFileUseCase**: Load criteria from JSON files
+6. **ParseCriteriaFromStringUseCase**: Parse criteria from CLI strings
+
+## 🔧 Criteria Configuration System
+
+The system now features a unified criteria configuration system that supports multiple input formats:
+
+### Criteria Sources
+
+1. **File-based Configuration**: JSON files in the `criteria/` directory
+2. **CLI String Format**: Inline criteria definitions via command line
+3. **Default Criteria**: Built-in default evaluation criteria
+4. **Template System**: Reusable criteria templates
+
+### Criteria File Structure
+
+```json
+{
+  "name": "Criteria Set Name",
+  "description": "Description of the criteria set",
+  "criteria": [
+    {
+      "name": "criterion_name",
+      "description": "What this criterion measures",
+      "weight": 0.5,
+      "evaluation_prompt": "Specific prompt for the LLM judge",
+      "examples": {
+        "1": "Poor example",
+        "5": "Excellent example"
+      },
+      "domain_specific": false,
+      "requires_context": false,
+      "metadata": {
+        "importance": "high",
+        "category": "content_quality",
+        "tags": ["tag1", "tag2"]
+      }
+    }
+  ]
+}
+```
+
+### Criteria Directory Structure
+
+```
+criteria/
+├── README.md                    # Criteria documentation
+├── default.json                 # Default evaluation criteria
+├── custom.json                  # Custom criteria example
+└── template.json                # Template for creating new criteria
+```
 
 ## 🔌 Infrastructure
 

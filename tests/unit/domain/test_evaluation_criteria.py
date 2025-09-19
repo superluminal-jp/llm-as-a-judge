@@ -3,13 +3,10 @@
 import pytest
 from dataclasses import FrozenInstanceError
 
-from src.llm_judge.domain.evaluation.entities import (
-    CriterionDefinition,
-)
 from src.llm_judge.domain.evaluation.criteria import (
+    CriterionDefinition,
     DefaultCriteria,
     EvaluationCriteria,
-    CriterionType,
 )
 
 
@@ -21,7 +18,6 @@ class TestCriterionDefinition:
         criterion = CriterionDefinition(
             name="accuracy",
             description="Factual correctness of the response",
-            criterion_type=CriterionType.FACTUAL,
             weight=0.3,
             scale_min=1,
             scale_max=5,
@@ -29,7 +25,6 @@ class TestCriterionDefinition:
 
         assert criterion.name == "accuracy"
         assert criterion.description == "Factual correctness of the response"
-        assert criterion.criterion_type == CriterionType.FACTUAL
         assert criterion.weight == 0.3
         assert criterion.scale_min == 1
         assert criterion.scale_max == 5
@@ -47,7 +42,6 @@ class TestCriterionDefinition:
         criterion = CriterionDefinition(
             name="accuracy",
             description="Factual correctness",
-            criterion_type=CriterionType.FACTUAL,
             examples=examples,
         )
 
@@ -58,29 +52,27 @@ class TestCriterionDefinition:
     def test_criterion_definition_validation(self):
         """Test criterion definition validation."""
         # Test invalid scale
-        with pytest.raises(ValueError, match="Scale minimum must be less than maximum"):
+        with pytest.raises(ValueError, match="scale_min must be less than scale_max"):
             CriterionDefinition(
                 name="invalid",
                 description="test",
-                criterion_type=CriterionType.FACTUAL,
                 scale_min=5,
                 scale_max=3,
             )
 
         # Test negative weight
-        with pytest.raises(ValueError, match="Weight must be a positive number"):
+        with pytest.raises(
+            ValueError, match="Criterion weight must be between 0 and 1"
+        ):
             CriterionDefinition(
                 name="invalid",
                 description="test",
-                criterion_type=CriterionType.FACTUAL,
                 weight=-0.1,
             )
 
     def test_criterion_definition_immutable(self):
         """Test that criterion definitions are immutable."""
-        criterion = CriterionDefinition(
-            name="accuracy", description="test", criterion_type=CriterionType.FACTUAL
-        )
+        criterion = CriterionDefinition(name="accuracy", description="test")
 
         # Should not be able to modify after creation
         with pytest.raises(FrozenInstanceError):
@@ -93,13 +85,9 @@ class TestEvaluationCriteria:
     def test_evaluation_criteria_creation(self):
         """Test creating evaluation criteria collection."""
         criteria_list = [
-            CriterionDefinition("accuracy", "test", CriterionType.FACTUAL, weight=0.4),
-            CriterionDefinition(
-                "clarity", "test", CriterionType.QUALITATIVE, weight=0.3
-            ),
-            CriterionDefinition(
-                "completeness", "test", CriterionType.STRUCTURAL, weight=0.3
-            ),
+            CriterionDefinition("accuracy", "test", weight=0.4),
+            CriterionDefinition("clarity", "test", weight=0.3),
+            CriterionDefinition("completeness", "test", weight=0.3),
         ]
 
         criteria = EvaluationCriteria(
@@ -114,56 +102,40 @@ class TestEvaluationCriteria:
 
     def test_evaluation_criteria_get_criterion(self):
         """Test getting specific criterion by name."""
-        accuracy_def = CriterionDefinition("accuracy", "test", CriterionType.FACTUAL)
-        clarity_def = CriterionDefinition("clarity", "test", CriterionType.QUALITATIVE)
+        accuracy_def = CriterionDefinition("accuracy", "test")
+        clarity_def = CriterionDefinition("clarity", "test")
 
         criteria = EvaluationCriteria(name="test", criteria=[accuracy_def, clarity_def])
 
         found_accuracy = criteria.get_criterion("accuracy")
         assert found_accuracy.name == accuracy_def.name
         assert found_accuracy.description == accuracy_def.description
-        assert found_accuracy.criterion_type == accuracy_def.criterion_type
 
         not_found = criteria.get_criterion("nonexistent")
         assert not_found is None
 
-    def test_evaluation_criteria_get_by_type(self):
-        """Test getting criteria by type."""
-        factual_criterion = CriterionDefinition(
-            "accuracy", "test", CriterionType.FACTUAL
-        )
-        qualitative_criterion1 = CriterionDefinition(
-            "clarity", "test", CriterionType.QUALITATIVE
-        )
-        qualitative_criterion2 = CriterionDefinition(
-            "helpfulness", "test", CriterionType.QUALITATIVE
-        )
+    def test_evaluation_criteria_add_criterion(self):
+        """Test adding criteria to collection."""
+        # Start with one criterion to meet minimum requirement
+        initial_criterion = CriterionDefinition("initial", "test", weight=0.5)
+        criteria = EvaluationCriteria(name="test", criteria=[initial_criterion])
 
-        criteria = EvaluationCriteria(
-            name="test",
-            criteria=[
-                factual_criterion,
-                qualitative_criterion1,
-                qualitative_criterion2,
-            ],
-        )
+        criterion = CriterionDefinition("accuracy", "test", weight=0.5)
+        criteria.add_criterion(criterion)
 
-        factual_criteria = criteria.get_criteria_by_type(CriterionType.FACTUAL)
-        assert len(factual_criteria) == 1
-        assert factual_criteria[0].name == factual_criterion.name
-        assert factual_criteria[0].criterion_type == factual_criterion.criterion_type
+        assert len(criteria.criteria) == 2
+        assert criteria.get_criterion("accuracy") is not None
 
-        qualitative_criteria = criteria.get_criteria_by_type(CriterionType.QUALITATIVE)
-        assert len(qualitative_criteria) == 2
+        # Test adding duplicate criterion
+        with pytest.raises(ValueError, match="Criterion 'accuracy' already exists"):
+            criteria.add_criterion(criterion)
 
     def test_evaluation_criteria_weight_validation(self):
         """Test weight validation in criteria collection."""
         # Test weights don't sum to 1 (with tolerance)
         criteria_list = [
-            CriterionDefinition("accuracy", "test", CriterionType.FACTUAL, weight=0.5),
-            CriterionDefinition(
-                "clarity", "test", CriterionType.QUALITATIVE, weight=0.6
-            ),  # Sum = 1.1
+            CriterionDefinition("accuracy", "test", weight=0.5),
+            CriterionDefinition("clarity", "test", weight=0.6),  # Sum = 1.1
         ]
 
         # Create with unnormalized weights - should work since normalize_weights=True by default
@@ -176,9 +148,9 @@ class TestEvaluationCriteria:
     def test_evaluation_criteria_normalization(self):
         """Test automatic weight normalization."""
         criteria_list = [
-            CriterionDefinition("accuracy", "test", CriterionType.FACTUAL, weight=0.4),
+            CriterionDefinition("accuracy", "test", weight=0.4),
             CriterionDefinition(
-                "clarity", "test", CriterionType.QUALITATIVE, weight=0.6
+                "clarity", "test", weight=0.6
             ),  # Sum = 1.0 (already normalized)
         ]
 
@@ -195,11 +167,11 @@ class TestEvaluationCriteria:
 class TestDefaultCriteria:
     """Test default criteria factory methods."""
 
-    def test_default_comprehensive_criteria(self):
-        """Test comprehensive default criteria."""
-        criteria = DefaultCriteria.comprehensive()
+    def test_default_balanced_criteria(self):
+        """Test balanced default criteria."""
+        criteria = DefaultCriteria.balanced()
 
-        assert criteria.name == "Comprehensive Default Evaluation"
+        assert criteria.name == "Balanced Default Evaluation"
         assert len(criteria.criteria) == 7
 
         # Check that all expected criteria are present
@@ -255,7 +227,7 @@ class TestDefaultCriteria:
 
     def test_default_criteria_have_examples(self):
         """Test that default criteria include scoring examples."""
-        criteria = DefaultCriteria.comprehensive()
+        criteria = DefaultCriteria.balanced()
 
         for criterion in criteria.criteria:
             assert len(criterion.examples) > 0
@@ -264,24 +236,21 @@ class TestDefaultCriteria:
             assert min(example_scores) >= criterion.scale_min
             assert max(example_scores) <= criterion.scale_max
 
-    def test_default_criteria_types_distribution(self):
-        """Test that default criteria cover different criterion types."""
-        criteria = DefaultCriteria.comprehensive()
+    def test_default_criteria_domain_specific_distribution(self):
+        """Test that default criteria have appropriate domain-specific flags."""
+        criteria = DefaultCriteria.balanced()
 
-        criterion_types = {c.criterion_type for c in criteria.criteria}
-
-        # Should have multiple types represented
-        assert CriterionType.FACTUAL in criterion_types
-        assert CriterionType.QUALITATIVE in criterion_types
-        assert CriterionType.STRUCTURAL in criterion_types
+        # Most criteria should not be domain-specific
+        domain_specific_count = sum(1 for c in criteria.criteria if c.domain_specific)
+        assert domain_specific_count == 0  # Balanced criteria are general-purpose
 
     def test_custom_criteria_creation(self):
         """Test creating custom criteria using builder pattern."""
         # Test the builder pattern for custom criteria
         builder = DefaultCriteria.builder()
-        builder.add_factual_criterion("accuracy", "Test accuracy", weight=0.4)
-        builder.add_quality_criterion("clarity", "Test clarity", weight=0.3)
-        builder.add_quality_criterion("creativity", "Test creativity", weight=0.3)
+        builder.add_criterion("accuracy", "Test accuracy", weight=0.4)
+        builder.add_criterion("clarity", "Test clarity", weight=0.3)
+        builder.add_criterion("creativity", "Test creativity", weight=0.3)
         custom_criteria = builder.build()
 
         assert custom_criteria.name == "Custom Evaluation"
@@ -295,22 +264,35 @@ class TestDefaultCriteria:
         assert criterion_names == {"accuracy", "clarity", "creativity"}
 
 
-class TestCriterionType:
-    """Test CriterionType enum."""
+class TestCriteriaParser:
+    """Test CriteriaParser functionality."""
 
-    def test_criterion_type_values(self):
-        """Test criterion type enum values."""
-        assert CriterionType.FACTUAL.value == "factual"
-        assert CriterionType.QUALITATIVE.value == "qualitative"
-        assert CriterionType.STRUCTURAL.value == "structural"
-        assert CriterionType.CONTEXTUAL.value == "contextual"
-        assert CriterionType.LINGUISTIC.value == "linguistic"
-        assert CriterionType.ETHICAL.value == "ethical"
+    def test_parse_criteria_string_valid(self):
+        """Test parsing valid criteria string."""
+        criteria_string = (
+            "accuracy:Factual correctness:0.4,clarity:How clear the response is:0.3"
+        )
+        from src.llm_judge.domain.evaluation.criteria import CriteriaParser
 
-    def test_criterion_type_from_string(self):
-        """Test creating criterion type from string."""
-        assert CriterionType("factual") == CriterionType.FACTUAL
-        assert CriterionType("qualitative") == CriterionType.QUALITATIVE
+        criteria = CriteriaParser.parse_criteria_string(criteria_string)
 
-        with pytest.raises(ValueError):
-            CriterionType("invalid_type")
+        assert len(criteria) == 2
+        assert criteria[0].name == "accuracy"
+        assert criteria[0].description == "Factual correctness"
+        assert criteria[0].weight == 0.4
+        assert criteria[1].name == "clarity"
+        assert criteria[1].description == "How clear the response is"
+        assert criteria[1].weight == 0.3
+
+    def test_parse_criteria_string_invalid(self):
+        """Test parsing invalid criteria string."""
+        from src.llm_judge.domain.evaluation.criteria import CriteriaParser
+
+        with pytest.raises(ValueError, match="Invalid criterion format"):
+            CriteriaParser.parse_criteria_string("invalid_format")
+
+        with pytest.raises(ValueError, match="Criterion name cannot be empty"):
+            CriteriaParser.parse_criteria_string(":description:0.5")
+
+        with pytest.raises(ValueError, match="Criterion description cannot be empty"):
+            CriteriaParser.parse_criteria_string("name::0.5")

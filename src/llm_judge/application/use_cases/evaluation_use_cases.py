@@ -105,7 +105,7 @@ class MultiCriteriaEvaluationCommand:
     response: str
     model: str
     criteria: Optional[List[CriterionDefinition]] = None
-    criteria_type: str = "comprehensive"
+    criteria_type: str = "default"
     metadata: Optional[Dict[str, Any]] = None
 
 
@@ -421,11 +421,6 @@ class MultiCriteriaEvaluationUseCase:
             eval_criteria = EvaluationCriteria(
                 name="Multi-criteria Evaluation",
                 description="Comprehensive evaluation across multiple criteria",
-                criterion_type=(
-                    criteria[0].criterion_type
-                    if criteria
-                    else CriterionType.QUALITATIVE
-                ),
                 weight=Weight(1.0),
             )
 

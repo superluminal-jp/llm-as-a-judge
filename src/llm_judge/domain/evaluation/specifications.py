@@ -98,16 +98,6 @@ class PendingEvaluationSpecification(EvaluationSpecification):
         return evaluation.status == EvaluationStatus.PENDING
 
 
-class CriteriaTypeSpecification(CriteriaSpecification):
-    """Specification for criteria type."""
-
-    def __init__(self, criterion_type: str):
-        self.criterion_type = criterion_type
-
-    def is_satisfied_by(self, criteria: CriterionDefinition) -> bool:
-        return criteria.criterion_type.value == self.criterion_type
-
-
 class WeightRangeSpecification(CriteriaSpecification):
     """Specification for weight range."""
 

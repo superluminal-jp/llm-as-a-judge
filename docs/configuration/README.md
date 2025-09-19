@@ -62,44 +62,34 @@ MULTI_CRITERIA_TIMEOUT=60
 USE_EQUAL_WEIGHTS=true
 ```
 
-### 2. Configuration File (JSON/YAML)
+### 2. Configuration File (JSON)
 
 Create `config.json`:
 
 ```json
 {
-  "llm_providers": {
-    "openai": {
-      "api_key": "sk-your-openai-key",
-      "model": "gpt-4",
-      "max_tokens": 4000,
-      "temperature": 0.1
-    },
-    "anthropic": {
-      "api_key": "sk-ant-your-anthropic-key",
-      "model": "claude-sonnet-4-20250514",
-      "max_tokens": 4000,
-      "temperature": 0.1
-    }
-  },
   "default_provider": "anthropic",
-  "request_settings": {
-    "timeout": 30,
-    "connect_timeout": 10,
-    "max_retries": 3,
-    "backoff_factor": 2.0
+  "openai_model": "gpt-5-2025-08-07",
+  "anthropic_model": "claude-sonnet-4-20250514",
+  "bedrock_model": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+  "request_timeout": 30,
+  "connect_timeout": 10,
+  "max_retries": 3,
+  "retry_delay": 1,
+  "log_level": "INFO",
+  "dev_mode": false,
+  "default_criteria_type": "default",
+  "use_equal_weights": false,
+  "persistence": {
+    "enabled": false,
+    "storage_type": "file",
+    "storage_path": "./evaluation_cache.db"
   },
-  "multi_criteria_settings": {
-    "enabled_by_default": true,
-    "timeout": 60,
-    "fallback_on_error": true,
-    "default_criteria_type": "comprehensive",
-    "use_equal_weights": true
-  },
-  "logging": {
-    "level": "INFO",
-    "enable_audit": true,
-    "log_file": "logs/llm_judge.log"
+  "evaluation": {
+    "default_scale_min": 1,
+    "default_scale_max": 5,
+    "normalize_weights": true,
+    "minimum_criteria": 1
   }
 }
 ```
@@ -138,6 +128,57 @@ judge = LLMJudge(config=config)
 ```
 
 ## ⚙️ Configuration Options
+
+### Criteria Configuration
+
+The system now supports flexible criteria configuration through the `criteria/` directory:
+
+#### Criteria Directory Structure
+
+```
+criteria/
+├── README.md                    # Criteria documentation
+├── default.json                 # Default evaluation criteria
+├── custom.json                  # Custom criteria example
+└── template.json                # Template for creating new criteria
+```
+
+#### Criteria File Format
+
+```json
+{
+  "name": "Criteria Set Name",
+  "description": "Description of the criteria set",
+  "criteria": [
+    {
+      "name": "criterion_name",
+      "description": "What this criterion measures",
+      "weight": 0.5,
+      "evaluation_prompt": "Specific prompt for the LLM judge",
+      "examples": {
+        "1": "Poor example",
+        "5": "Excellent example"
+      },
+      "domain_specific": false,
+      "requires_context": false,
+      "metadata": {
+        "importance": "high",
+        "category": "content_quality",
+        "tags": ["tag1", "tag2"]
+      }
+    }
+  ]
+}
+```
+
+#### Configuration Options
+
+| Parameter               | Type | Default   | Description                              |
+| ----------------------- | ---- | --------- | ---------------------------------------- |
+| `default_criteria_type` | str  | "default" | Default criteria type to use             |
+| `use_equal_weights`     | bool | false     | Use equal weights for all criteria       |
+| `normalize_weights`     | bool | true      | Normalize criteria weights to sum to 1.0 |
+| `minimum_criteria`      | int  | 1         | Minimum number of criteria required      |
 
 ### LLM Provider Configuration
 

@@ -59,14 +59,6 @@ class CriteriaService(ABC):
     """Abstract service for criteria operations."""
 
     @abstractmethod
-    async def get_criteria_by_type(
-        self,
-        criterion_type: str,
-    ) -> List[CriterionDefinition]:
-        """Get criteria by type."""
-        pass
-
-    @abstractmethod
     async def validate_criteria(
         self,
         criteria: List[CriterionDefinition],

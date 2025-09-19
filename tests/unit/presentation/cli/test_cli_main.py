@@ -215,7 +215,7 @@ class TestEvaluateCommand:
             mock_config_obj = Mock()
             mock_config_obj.custom_criteria = None
             mock_config_obj.criteria_file = None
-            mock_config_obj.default_criteria_type = "comprehensive"
+            mock_config_obj.default_criteria_type = "balanced"
             mock_config_obj.criteria_weights = None
             mock_config_obj.use_equal_weights = True
             # Configure the mock to return actual values instead of Mock objects
@@ -223,7 +223,7 @@ class TestEvaluateCommand:
                 **{
                     "custom_criteria": None,
                     "criteria_file": None,
-                    "default_criteria_type": "comprehensive",
+                    "default_criteria_type": "balanced",
                     "criteria_weights": None,
                     "use_equal_weights": True,
                 }
@@ -296,7 +296,7 @@ class TestEvaluateCommand:
             mock_config_obj = Mock()
             mock_config_obj.custom_criteria = None
             mock_config_obj.criteria_file = None
-            mock_config_obj.default_criteria_type = "comprehensive"
+            mock_config_obj.default_criteria_type = "balanced"
             mock_config_obj.criteria_weights = None
             mock_config_obj.use_equal_weights = True
             # Configure the mock to return actual values instead of Mock objects
@@ -304,7 +304,7 @@ class TestEvaluateCommand:
                 **{
                     "custom_criteria": None,
                     "criteria_file": None,
-                    "default_criteria_type": "comprehensive",
+                    "default_criteria_type": "balanced",
                     "criteria_weights": None,
                     "use_equal_weights": True,
                 }

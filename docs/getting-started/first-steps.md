@@ -84,7 +84,32 @@ Response A shows:
 • Accuracy: Correct but incomplete
 ```
 
-## Step 3: Custom Configuration
+## Step 3: Criteria Configuration
+
+### Using Criteria Files
+
+```bash
+# Use default criteria file
+python -m src.llm_judge evaluate "Question" "Answer" --criteria-file criteria/default.json
+
+# Use custom criteria file
+python -m src.llm_judge evaluate "Question" "Answer" --criteria-file criteria/custom.json
+
+# List available criteria types
+python -m src.llm_judge evaluate --list-criteria-types
+```
+
+### Custom Criteria
+
+```bash
+# Use custom criteria string
+python -m src.llm_judge evaluate "Question" "Answer" --custom-criteria "accuracy:Factual correctness:0.4,clarity:How clear the response is:0.3,helpfulness:How useful the response is:0.3"
+
+# Use equal weights for all criteria
+python -m src.llm_judge evaluate "Question" "Answer" --equal-weights
+```
+
+## Step 4: Custom Configuration
 
 ### Using Different Models
 
@@ -106,7 +131,7 @@ python -m src.llm_judge --output json evaluate "Question" "Answer"
 python -m src.llm_judge --verbose evaluate "Question" "Answer"
 ```
 
-## Step 4: Batch Processing
+## Step 5: Batch Processing
 
 ### Create Sample Batch
 
@@ -129,6 +154,7 @@ You've successfully completed your first evaluations! Here's what you've learned
 - ✅ How to evaluate single responses
 - ✅ How to compare multiple responses
 - ✅ Understanding the output format
+- ✅ Criteria configuration and customization
 - ✅ Basic configuration options
 - ✅ Batch processing basics
 

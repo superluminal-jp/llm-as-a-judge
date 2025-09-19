@@ -276,7 +276,7 @@ class TestCLIIntegration:
                 {
                     "custom_criteria": None,
                     "criteria_file": None,
-                    "default_criteria_type": "comprehensive",
+                    "default_criteria_type": "balanced",
                     "criteria_weights": None,
                     "use_equal_weights": True,
                 },

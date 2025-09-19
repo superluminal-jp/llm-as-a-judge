@@ -29,7 +29,6 @@ from .value_objects import (
     EvaluationResponse,
     EvaluationCriteria,
     EvaluationResult,
-    CriterionType,
 )
 
 
@@ -39,7 +38,6 @@ class CriterionDefinition:
 
     name: str
     description: str
-    criterion_type: CriterionType
     id: EntityId = field(default_factory=EntityId)
     weight: float = 1.0
     scale_min: int = 1
@@ -92,7 +90,6 @@ class CriterionDefinition:
             id=self.id,
             name=self.name,
             description=self.description,
-            criterion_type=self.criterion_type,
             weight=new_weight,
             scale_min=self.scale_min,
             scale_max=self.scale_max,

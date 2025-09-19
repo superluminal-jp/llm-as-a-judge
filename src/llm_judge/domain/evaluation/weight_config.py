@@ -170,7 +170,6 @@ class CriteriaWeightApplier:
             new_criterion = CriterionDefinition(
                 name=criterion.name,
                 description=criterion.description,
-                criterion_type=criterion.criterion_type,
                 weight=new_weight,
                 scale_min=criterion.scale_min,
                 scale_max=criterion.scale_max,
@@ -191,33 +190,61 @@ class CriteriaWeightApplier:
         )
 
     @staticmethod
-    def get_available_criteria_names(criteria_type: str = "comprehensive") -> List[str]:
+    def get_available_criteria_names(criteria_type: str = "default") -> List[str]:
         """
         Get available criteria names for a given criteria type.
 
         Args:
-            criteria_type: Type of criteria ('comprehensive', 'basic', 'technical', 'creative')
+            criteria_type: Type of criteria ('default', 'balanced', 'basic', 'technical', 'creative')
 
         Returns:
             List of criterion names
         """
         from .criteria import DefaultCriteria
 
-        if criteria_type == "comprehensive":
-            criteria = DefaultCriteria.comprehensive()
-        elif criteria_type == "basic":
-            criteria = DefaultCriteria.basic()
-        elif criteria_type == "technical":
-            criteria = DefaultCriteria.technical()
-        elif criteria_type == "creative":
-            criteria = DefaultCriteria.creative()
+        # Try to load from criteria file first
+        if criteria_type.endswith('.json'):
+            from pathlib import Path
+            criteria_file_path = Path(criteria_type)
+            if criteria_file_path.exists():
+                from ..presentation.cli.main import load_unified_config
+                custom_criteria, config_data = load_unified_config(criteria_file_path)
+                if custom_criteria:
+                    criteria = custom_criteria
+                else:
+                    raise ValueError(f"Could not load criteria from file: {criteria_type}")
+            else:
+                raise ValueError(f"Criteria file not found: {criteria_type}")
         else:
-            raise ValueError(f"Unknown criteria type: {criteria_type}")
+            # Try to find in criteria directory
+            from pathlib import Path
+            criteria_file_path = Path(f"criteria/{criteria_type}.json")
+            if criteria_file_path.exists():
+                from ..presentation.cli.main import load_unified_config
+                custom_criteria, config_data = load_unified_config(criteria_file_path)
+                if custom_criteria:
+                    criteria = custom_criteria
+                else:
+                    raise ValueError(f"Could not load criteria from file: {criteria_type}")
+            else:
+                # Fall back to predefined types
+                if criteria_type == "default":
+                    criteria = DefaultCriteria.default()
+                elif criteria_type == "balanced":
+                    criteria = DefaultCriteria.balanced()
+                elif criteria_type == "basic":
+                    criteria = DefaultCriteria.basic()
+                elif criteria_type == "technical":
+                    criteria = DefaultCriteria.technical()
+                elif criteria_type == "creative":
+                    criteria = DefaultCriteria.creative()
+                else:
+                    raise ValueError(f"Unknown criteria type: {criteria_type}")
 
         return [c.name for c in criteria.criteria]
 
 
-def format_weight_config_help(criteria_type: str = "comprehensive") -> str:
+def format_weight_config_help(criteria_type: str = "default") -> str:
     """
     Generate help text for weight configuration.
 

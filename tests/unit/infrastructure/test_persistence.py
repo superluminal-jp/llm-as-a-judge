@@ -90,14 +90,10 @@ class TestEvaluationRecord:
         )
 
         result = MultiCriteriaResult(
-            criterion_scores={
-                "accuracy": CriterionScore(
-                    criterion_name="accuracy", score=4.0, reasoning="Good"
-                ),
-                "clarity": CriterionScore(
-                    criterion_name="clarity", score=3.5, reasoning="Fair"
-                ),
-            },
+            criterion_scores=[
+                CriterionScore(criterion_name="accuracy", score=4.0, reasoning="Good"),
+                CriterionScore(criterion_name="clarity", score=3.5, reasoning="Fair"),
+            ],
             aggregated=AggregatedScore(
                 overall_score=3.75,
                 weighted_score=3.75,
@@ -143,11 +139,9 @@ class TestEvaluationRecord:
         )
 
         result = MultiCriteriaResult(
-            criterion_scores={
-                "accuracy": CriterionScore(
-                    criterion_name="accuracy", score=4.0, reasoning="Good"
-                ),
-            },
+            criterion_scores=[
+                CriterionScore(criterion_name="accuracy", score=4.0, reasoning="Good"),
+            ],
             aggregated=AggregatedScore(
                 overall_score=4.0,
                 weighted_score=4.0,
@@ -249,11 +243,9 @@ class TestJsonEvaluationRepository:
         )
 
         result = MultiCriteriaResult(
-            criterion_scores={
-                "accuracy": CriterionScore(
-                    criterion_name="accuracy", score=4.0, reasoning="Good"
-                ),
-            },
+            criterion_scores=[
+                CriterionScore(criterion_name="accuracy", score=4.0, reasoning="Good"),
+            ],
             aggregated=AggregatedScore(
                 overall_score=4.0,
                 weighted_score=4.0,
@@ -435,11 +427,9 @@ class TestPersistenceServiceImpl:
     def sample_result(self):
         """Create sample evaluation result."""
         return MultiCriteriaResult(
-            criterion_scores={
-                "accuracy": CriterionScore(
-                    criterion_name="accuracy", score=4.0, reasoning="Good"
-                ),
-            },
+            criterion_scores=[
+                CriterionScore(criterion_name="accuracy", score=4.0, reasoning="Good"),
+            ],
             aggregated=AggregatedScore(
                 overall_score=4.0,
                 weighted_score=4.0,

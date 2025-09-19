@@ -94,6 +94,34 @@ asyncio.run(compare_responses())
 
 ## Custom Criteria
 
+### Using Criteria Files
+
+```python
+from src.llm_judge.domain.evaluation.criteria import EvaluationCriteria
+
+async def load_criteria_from_file():
+    judge = LLMJudge()
+
+    # Load criteria from JSON file
+    criteria = EvaluationCriteria.from_file("criteria/default.json")
+
+    candidate = CandidateResponse(
+        prompt="What is machine learning?",
+        response="Machine learning is a subset of AI that enables computers to learn from data",
+        model="gpt-4"
+    )
+
+    result = await judge.evaluate_multi_criteria(candidate, criteria=criteria)
+
+    print(f"Score: {result.aggregated.overall_score:.1f}/5")
+    for cs in result.criterion_scores:
+        print(f"{cs.criterion_name}: {cs.score}/5")
+
+    await judge.close()
+
+asyncio.run(load_criteria_from_file())
+```
+
 ### Define Custom Criteria
 
 ```python

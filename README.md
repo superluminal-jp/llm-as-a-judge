@@ -30,7 +30,7 @@ python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" -
 python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --custom-criteria "accuracy:Factual correctness:factual:0.4,clarity:How clear the response is:linguistic:0.3,helpfulness:How useful the response is:qualitative:0.3"
 
 # CLI Usage - Custom criteria from file
-python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --criteria-file examples/academic_criteria.json
+python -m src.llm_judge evaluate "What is AI?" "AI is artificial intelligence" --criteria-file criteria/default.json
 
 # CLI Usage - List available criteria types
 python -m src.llm_judge evaluate --list-criteria-types
@@ -146,7 +146,8 @@ llm-as-a-judge/
 │   ├── integration/                 # Integration tests (cross-layer)
 │   └── fixtures/                    # Test fixtures and sample data
 ├── docs/                            # Comprehensive documentation
-├── examples/                        # Example configurations and usage
+├── criteria/                        # Evaluation criteria configuration files
+├── config.json                      # Main configuration file
 └── README.md                        # This file - project overview
 ```
 
@@ -282,6 +283,20 @@ asyncio.run(compare_responses())
 ```
 
 ## 🔧 Configuration
+
+### Criteria Configuration
+
+The system now uses a unified criteria configuration system with the `criteria/` directory:
+
+```
+criteria/
+├── README.md                    # Criteria documentation
+├── default.json                 # Default evaluation criteria
+├── custom.json                  # Custom criteria example
+└── template.json                # Template for creating new criteria
+```
+
+### Environment Configuration
 
 Create a `.env` file in the project root:
 

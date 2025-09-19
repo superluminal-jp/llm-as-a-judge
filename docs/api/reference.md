@@ -314,12 +314,14 @@ Definition of a single evaluation criterion.
 class CriterionDefinition:
     name: str
     description: str
-    criterion_type: CriterionType
     weight: float = 1.0
     scale_min: int = 1
     scale_max: int = 5
     evaluation_prompt: str = ""
     examples: Dict[int, str] = field(default_factory=dict)
+    domain_specific: bool = False
+    requires_context: bool = False
+    metadata: Dict[str, Any] = field(default_factory=dict)
 ```
 
 ### DefaultCriteria
@@ -365,18 +367,60 @@ custom = (DefaultCriteria.builder()
          .build("custom_evaluation", "Custom 3-criteria evaluation"))
 ```
 
-### CriterionType
+## Criteria File Format
 
-Enumeration of criterion types.
+The system supports loading evaluation criteria from JSON files in the `criteria/` directory.
 
-```python
-class CriterionType(Enum):
-    FACTUAL = "factual"           # Objective, verifiable accuracy
-    QUALITATIVE = "qualitative"   # Subjective quality aspects
-    STRUCTURAL = "structural"     # Organization and formatting
-    CONTEXTUAL = "contextual"     # Context appropriateness
-    LINGUISTIC = "linguistic"     # Language quality
-    ETHICAL = "ethical"           # Ethical considerations
+### File Structure
+
+```json
+{
+  "name": "Criteria Set Name",
+  "description": "Description of the criteria set",
+  "criteria": [
+    {
+      "name": "criterion_name",
+      "description": "What this criterion measures",
+      "weight": 0.5,
+      "evaluation_prompt": "Specific prompt for the LLM judge",
+      "examples": {
+        "1": "Poor example",
+        "5": "Excellent example"
+      },
+      "domain_specific": false,
+      "requires_context": false,
+      "metadata": {
+        "importance": "high",
+        "category": "content_quality",
+        "tags": ["tag1", "tag2"]
+      }
+    }
+  ]
+}
+```
+
+### Field Descriptions
+
+- `name`: Unique identifier for the criteria set
+- `description`: Human-readable description of the criteria set
+- `criteria`: Array of criterion definitions
+  - `name`: Unique identifier for the criterion
+  - `description`: What this criterion measures
+  - `weight`: Relative importance (0.0-1.0, will be normalized)
+  - `evaluation_prompt`: Specific prompt for the LLM judge
+  - `examples`: Examples for different score levels (1-5)
+  - `domain_specific`: Whether this criterion is domain-specific
+  - `requires_context`: Whether this criterion requires additional context
+  - `metadata`: Additional metadata for categorization
+
+### CLI Usage
+
+```bash
+# Use criteria from file
+python -m src.llm_judge evaluate "Question" "Answer" --criteria-file criteria/default.json
+
+# Use custom criteria file
+python -m src.llm_judge evaluate "Question" "Answer" --criteria-file criteria/custom.json
 ```
 
 ## Data Persistence & Management
@@ -889,6 +933,8 @@ python -m src.llm_judge evaluate "Question" "Answer" --output json
 - `--custom-criteria CRITERIA_STRING`: Custom criteria definition string
 - `--criteria-file PATH`: Path to JSON file containing custom criteria
 - `--list-criteria-types`: List available criterion types and exit
+- `--equal-weights`: Use equal weights for all criteria
+- `--criteria-weights WEIGHTS`: Specify custom weights for criteria
 
 **Compare Command Options:**
 

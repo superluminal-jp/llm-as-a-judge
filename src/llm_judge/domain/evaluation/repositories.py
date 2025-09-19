@@ -86,15 +86,6 @@ class CriteriaRepository(ABC):
         pass
 
     @abstractmethod
-    async def find_by_type(
-        self,
-        criterion_type: str,
-        limit: int = 100,
-    ) -> List[CriterionDefinition]:
-        """Find criteria by type."""
-        pass
-
-    @abstractmethod
     async def delete(self, criteria_id: EntityId) -> None:
         """Delete a criterion definition."""
         pass

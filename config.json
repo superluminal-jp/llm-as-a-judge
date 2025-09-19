@@ -1,0 +1,25 @@
+{
+  "default_provider": "anthropic",
+  "openai_model": "gpt-5-2025-08-07",
+  "anthropic_model": "claude-sonnet-4-20250514",
+  "bedrock_model": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+  "request_timeout": 30,
+  "connect_timeout": 10,
+  "max_retries": 3,
+  "retry_delay": 1,
+  "log_level": "INFO",
+  "dev_mode": false,
+  "default_criteria_type": "default",
+  "use_equal_weights": false,
+  "persistence": {
+    "enabled": false,
+    "storage_type": "file",
+    "storage_path": "./evaluation_cache.db"
+  },
+  "evaluation": {
+    "default_scale_min": 1,
+    "default_scale_max": 5,
+    "normalize_weights": true,
+    "minimum_criteria": 1
+  }
+}

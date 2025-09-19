@@ -164,8 +164,8 @@ class TestCriteriaWeightApplier:
 
     def test_get_available_criteria_names(self):
         """Test getting available criteria names."""
-        # Test comprehensive criteria
-        names = CriteriaWeightApplier.get_available_criteria_names("comprehensive")
+        # Test balanced criteria
+        names = CriteriaWeightApplier.get_available_criteria_names("balanced")
         assert "accuracy" in names
         assert "clarity" in names
         assert "helpfulness" in names

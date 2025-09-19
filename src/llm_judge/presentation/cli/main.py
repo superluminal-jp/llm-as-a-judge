@@ -20,10 +20,10 @@ from ...application.services.llm_judge_service import (
 from ...infrastructure.config.config import LLMConfig, load_config
 from ...domain.evaluation.criteria import DefaultCriteria
 from ...domain.evaluation.weight_config import WeightConfigParser, CriteriaWeightApplier
-from ...domain.evaluation.custom_criteria import (
-    CustomCriteriaParser,
-    CustomCriteriaBuilder,
-    get_available_criterion_types,
+from ...domain.evaluation.criteria import (
+    CriteriaParser,
+    CriteriaBuilder,
+    EvaluationCriteria,
     save_criteria_template,
     create_criteria_template,
 )
@@ -119,11 +119,6 @@ Examples:
     )
     eval_parser.add_argument("--model", help="Model that generated the response")
     eval_parser.add_argument(
-        "--criteria-type",
-        choices=["comprehensive", "basic", "technical", "creative"],
-        help="Type of default criteria to use (overrides config)",
-    )
-    eval_parser.add_argument(
         "--show-detailed",
         action="store_true",
         help="Show detailed multi-criteria breakdown",
@@ -141,12 +136,12 @@ Examples:
     eval_parser.add_argument(
         "--custom-criteria",
         type=str,
-        help="Custom criteria definition in format 'name:description:type:weight,name2:description2:type2:weight2' (e.g., 'accuracy:Factual correctness:factual:0.4,clarity:How clear the response is:linguistic:0.3')",
+        help="Custom criteria definition in format 'name:description:weight,name2:description2:weight2' (e.g., 'accuracy:Factual correctness:0.4,clarity:How clear the response is:0.3')",
     )
     eval_parser.add_argument(
         "--criteria-file",
         type=Path,
-        help="Path to JSON file containing custom criteria definitions",
+        help="Path to JSON file containing custom criteria definitions. If not specified, uses default criteria.",
     )
     eval_parser.add_argument(
         "--list-criteria-types",
@@ -230,25 +225,115 @@ Examples:
     return parser
 
 
+def load_criteria_by_file(criteria_file: Optional[str]) -> EvaluationCriteria:
+    """
+    Load criteria from file path or use default if no file specified.
+
+    Args:
+        criteria_file: Path to criteria JSON file, or None for default
+
+    Returns:
+        EvaluationCriteria object
+
+    Raises:
+        CLIError: If criteria cannot be loaded
+    """
+    try:
+        # If no file specified, use default
+        if not criteria_file:
+            return DefaultCriteria.default()
+
+        # Try to load from the specified file path
+        criteria_file_path = Path(criteria_file)
+        if criteria_file_path.exists():
+            custom_criteria, config_data = load_unified_config(criteria_file_path)
+            if custom_criteria:
+                return custom_criteria
+            else:
+                raise CLIError(f"Could not load criteria from file: {criteria_file}")
+        else:
+            raise CLIError(f"Criteria file not found: {criteria_file}")
+
+    except Exception as e:
+        if isinstance(e, CLIError):
+            raise
+        else:
+            raise CLIError(f"Error loading criteria from '{criteria_file}': {e}")
+
+
+def load_unified_config(
+    config_file_path: Path,
+) -> tuple[Optional[EvaluationCriteria], Dict[str, Any]]:
+    """
+    Load unified configuration file containing both criteria and system configuration.
+
+    Args:
+        config_file_path: Path to unified configuration file
+
+    Returns:
+        Tuple of (evaluation_criteria, config_data)
+    """
+    try:
+        criteria_definitions, config_data = CriteriaParser.parse_unified_config_file(
+            config_file_path
+        )
+        builder = CriteriaBuilder()
+
+        # Set name and description from config if available
+        if "name" in config_data:
+            builder.set_name(config_data["name"])
+        if "description" in config_data:
+            builder.set_description(config_data["description"])
+
+        for cd in criteria_definitions:
+            builder.add_criterion(
+                name=cd.name,
+                description=cd.description,
+                weight=cd.weight,
+                evaluation_prompt=cd.evaluation_prompt,
+                examples=cd.examples,
+                domain_specific=cd.domain_specific,
+                requires_context=cd.requires_context,
+                metadata=cd.metadata,
+            )
+
+        evaluation_criteria = builder.build(normalize_weights=True)
+        return evaluation_criteria, config_data
+
+    except Exception as e:
+        raise CLIError(f"Error loading unified configuration: {e}")
+
+
 def list_criteria_types():
     """List available criteria types and exit."""
-    print("Available Criteria Types:")
+    print("Custom Criteria Configuration")
     print("=" * 50)
-
-    criterion_types = get_available_criterion_types()
-    for criterion_type in criterion_types:
-        print(f"  - {criterion_type}")
+    print("You can now define criteria freely without type restrictions.")
+    print("Each criterion needs only a name, description, and weight.")
 
     print("\nExample Usage:")
     print(
-        "  --custom-criteria 'accuracy:Factual correctness:factual:0.4,clarity:How clear the response is:linguistic:0.3'"
+        "  --custom-criteria 'accuracy:Factual correctness:0.4,clarity:How clear the response is:0.3'"
     )
-    print("  --criteria-file ./my-criteria.json")
+    print("  --criteria-file criteriabusiness.json")
 
     print("\nTo create a criteria template file:")
-    print(
-        "  python -c \"from src.llm_judge.domain.evaluation.custom_criteria import save_criteria_template; save_criteria_template('template.json')\""
-    )
+    print("  python -m src.llm_judge create-criteria-template my-criteria.json")
+
+    print("\nJSON Format:")
+    print("  {")
+    print('    "name": "Your Criteria Set",')
+    print('    "description": "Description of your criteria",')
+    print('    "criteria": [')
+    print("      {")
+    print('        "name": "criterion_name",')
+    print('        "description": "What this criterion measures",')
+    print('        "weight": 1.0,')
+    print('        "evaluation_prompt": "Specific prompt for evaluation",')
+    print('        "examples": {"1": "Poor", "5": "Excellent"}')
+    print("      }")
+    print("    ]")
+    print("  }")
 
 
 def load_cli_config(
@@ -295,8 +380,8 @@ async def evaluate_command(args: argparse.Namespace) -> Dict[str, Any]:
     judge = LLMJudge(config, judge_model=args.judge_model)
 
     try:
-        # Use multi-criteria evaluation with specified criteria type
-        criteria_type = getattr(args, "criteria_type", None)
+        # Use multi-criteria evaluation with specified criteria file
+        criteria_file = getattr(args, "criteria_file", None)
 
         # Handle custom criteria and weight configuration
         custom_criteria = None
@@ -311,15 +396,14 @@ async def evaluate_command(args: argparse.Namespace) -> Dict[str, Any]:
 
         if custom_criteria_string:
             try:
-                criteria_definitions = CustomCriteriaParser.parse_criteria_string(
+                criteria_definitions = CriteriaParser.parse_criteria_string(
                     custom_criteria_string
                 )
-                builder = CustomCriteriaBuilder()
+                builder = CriteriaBuilder()
                 for cd in criteria_definitions:
                     builder.add_criterion(
                         name=cd.name,
                         description=cd.description,
-                        criterion_type=cd.criterion_type,
                         weight=cd.weight,
                         evaluation_prompt=cd.evaluation_prompt,
                         examples=cd.examples,
@@ -333,23 +417,56 @@ async def evaluate_command(args: argparse.Namespace) -> Dict[str, Any]:
 
         elif criteria_file_path:
             try:
-                criteria_definitions = CustomCriteriaParser.parse_criteria_file(
-                    criteria_file_path
-                )
-                builder = CustomCriteriaBuilder()
-                for cd in criteria_definitions:
-                    builder.add_criterion(
-                        name=cd.name,
-                        description=cd.description,
-                        criterion_type=cd.criterion_type,
-                        weight=cd.weight,
-                        evaluation_prompt=cd.evaluation_prompt,
-                        examples=cd.examples,
-                        domain_specific=cd.domain_specific,
-                        requires_context=cd.requires_context,
-                        metadata=cd.metadata,
+                # Check if this is a unified configuration file
+                with open(criteria_file_path, "r", encoding="utf-8") as f:
+                    import json
+
+                    data = json.load(f)
+
+                # If it has both criteria and config fields, treat as unified config
+                if "criteria" in data and any(
+                    key in data
+                    for key in [
+                        "default_provider",
+                        "openai_model",
+                        "anthropic_model",
+                        "use_equal_weights",
+                    ]
+                ):
+                    custom_criteria, config_data = load_unified_config(
+                        criteria_file_path
                     )
-                custom_criteria = builder.build(normalize_weights=False)
+                    # Update config with values from unified config file
+                    if "default_provider" in config_data:
+                        config.default_provider = config_data["default_provider"]
+                    if "openai_model" in config_data:
+                        config.openai_model = config_data["openai_model"]
+                    if "anthropic_model" in config_data:
+                        config.anthropic_model = config_data["anthropic_model"]
+                    if "request_timeout" in config_data:
+                        config.request_timeout = config_data["request_timeout"]
+                    if "max_retries" in config_data:
+                        config.max_retries = config_data["max_retries"]
+                    if "log_level" in config_data:
+                        config.log_level = config_data["log_level"]
+                else:
+                    # Treat as legacy criteria-only file
+                    criteria_definitions = CriteriaParser.parse_criteria_file(
+                        criteria_file_path
+                    )
+                    builder = CriteriaBuilder()
+                    for cd in criteria_definitions:
+                        builder.add_criterion(
+                            name=cd.name,
+                            description=cd.description,
+                            weight=cd.weight,
+                            evaluation_prompt=cd.evaluation_prompt,
+                            examples=cd.examples,
+                            domain_specific=cd.domain_specific,
+                            requires_context=cd.requires_context,
+                            metadata=cd.metadata,
+                        )
+                    custom_criteria = builder.build(normalize_weights=False)
             except (ValueError, FileNotFoundError) as e:
                 raise CLIError(f"Error loading criteria file: {e}")
 
@@ -368,17 +485,8 @@ async def evaluate_command(args: argparse.Namespace) -> Dict[str, Any]:
                     weight_config = WeightConfigParser.parse_weight_string(
                         criteria_weights
                     )
-                    # Get base criteria
-                    if criteria_type == "comprehensive":
-                        base_criteria = DefaultCriteria.comprehensive()
-                    elif criteria_type == "basic":
-                        base_criteria = DefaultCriteria.basic()
-                    elif criteria_type == "technical":
-                        base_criteria = DefaultCriteria.technical()
-                    elif criteria_type == "creative":
-                        base_criteria = DefaultCriteria.creative()
-                    else:
-                        base_criteria = DefaultCriteria.comprehensive()  # Default
+                    # Get base criteria using flexible criteria loading
+                    base_criteria = load_criteria_by_file(criteria_file)
 
                     custom_criteria = CriteriaWeightApplier.apply_weights(
                         base_criteria, weight_config
@@ -388,25 +496,19 @@ async def evaluate_command(args: argparse.Namespace) -> Dict[str, Any]:
 
             elif use_equal_weights:
                 # Apply equal weights
-                if criteria_type == "comprehensive":
-                    base_criteria = DefaultCriteria.comprehensive()
-                elif criteria_type == "basic":
-                    base_criteria = DefaultCriteria.basic()
-                elif criteria_type == "technical":
-                    base_criteria = DefaultCriteria.technical()
-                elif criteria_type == "creative":
-                    base_criteria = DefaultCriteria.creative()
-                else:
-                    base_criteria = DefaultCriteria.comprehensive()  # Default
+                base_criteria = load_criteria_by_file(criteria_file)
 
                 criteria_names = [c.name for c in base_criteria.criteria]
                 weight_config = WeightConfigParser.create_equal_weights(criteria_names)
                 custom_criteria = CriteriaWeightApplier.apply_weights(
                     base_criteria, weight_config
                 )
+            else:
+                # Use criteria without weight modifications
+                custom_criteria = load_criteria_by_file(criteria_file)
 
         multi_result = await judge.evaluate_multi_criteria(
-            candidate, criteria_type=criteria_type, custom_criteria=custom_criteria
+            candidate, custom_criteria=custom_criteria
         )
         return {
             "type": "multi_criteria_evaluation",
@@ -670,8 +772,8 @@ async def data_export_command(args) -> None:
                     "result": {
                         "overall_score": eval_record.result.aggregated.overall_score,
                         "criterion_scores": {
-                            name: score.score
-                            for name, score in eval_record.result.criterion_scores.items()
+                            score.criterion_name: score.score
+                            for score in eval_record.result.criterion_scores
                         },
                     },
                     "metadata": {

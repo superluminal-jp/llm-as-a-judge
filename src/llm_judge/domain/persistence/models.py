@@ -115,15 +115,36 @@ class EvaluationRecord:
         """Serialize evaluation result."""
         return {
             "criterion_scores": {
-                name: {
+                score.criterion_name: {
                     "score": score.score,
                     "reasoning": score.reasoning,
+                    "confidence": score.confidence,
+                    "max_score": score.max_score,
+                    "min_score": score.min_score,
+                    "weight": score.weight,
+                    "metadata": score.metadata,
                 }
-                for name, score in self.result.criterion_scores.items()
+                for score in self.result.criterion_scores
             },
             "aggregated": {
                 "overall_score": self.result.aggregated.overall_score,
+                "weighted_score": self.result.aggregated.weighted_score,
+                "confidence": self.result.aggregated.confidence,
+                "min_score": self.result.aggregated.min_score,
+                "max_score": self.result.aggregated.max_score,
+                "mean_score": self.result.aggregated.mean_score,
+                "median_score": self.result.aggregated.median_score,
+                "score_std": self.result.aggregated.score_std,
+                "total_weight": self.result.aggregated.total_weight,
+                "criteria_count": self.result.aggregated.criteria_count,
             },
+            "judge_model": self.result.judge_model,
+            "processing_duration": self.result.processing_duration,
+            "overall_reasoning": self.result.overall_reasoning,
+            "strengths": self.result.strengths,
+            "weaknesses": self.result.weaknesses,
+            "suggestions": self.result.suggestions,
+            "metadata": self.result.metadata,
         }
 
     @classmethod
@@ -135,14 +156,21 @@ class EvaluationRecord:
             CriterionScore,
         )
 
-        criterion_scores = {
-            name: CriterionScore(
+        criterion_scores = [
+            CriterionScore(
                 criterion_name=name,
                 score=score_data["score"],
                 reasoning=score_data["reasoning"],
+                confidence=score_data.get(
+                    "confidence", 0.8
+                ),  # Default to 0.8 for old cached data
+                max_score=score_data.get("max_score", 5),
+                min_score=score_data.get("min_score", 1),
+                weight=score_data.get("weight", 1.0),
+                metadata=score_data.get("metadata", {}),
             )
             for name, score_data in data["criterion_scores"].items()
-        }
+        ]
 
         aggregated = AggregatedScore(
             overall_score=data["aggregated"]["overall_score"],
@@ -152,11 +180,25 @@ class EvaluationRecord:
             confidence=data["aggregated"].get("confidence", 0.8),
             min_score=data["aggregated"].get("min_score", 1),
             max_score=data["aggregated"].get("max_score", 5),
+            mean_score=data["aggregated"].get("mean_score", 0.0),
+            median_score=data["aggregated"].get("median_score", 0.0),
+            score_std=data["aggregated"].get("score_std", 0.0),
+            total_weight=data["aggregated"].get("total_weight", 1.0),
+            criteria_count=data["aggregated"].get("criteria_count", 0),
         )
 
         return MultiCriteriaResult(
             criterion_scores=criterion_scores,
             aggregated=aggregated,
+            judge_model=data.get(
+                "judge_model", "claude-sonnet-4-20250514"
+            ),  # Default to actual model for old cached data
+            processing_duration=data.get("processing_duration"),
+            overall_reasoning=data.get("overall_reasoning", ""),
+            strengths=data.get("strengths", []),
+            weaknesses=data.get("weaknesses", []),
+            suggestions=data.get("suggestions", []),
+            metadata=data.get("metadata", {}),
         )
 
     @classmethod

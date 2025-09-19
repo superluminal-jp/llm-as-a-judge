@@ -16,7 +16,6 @@ from .entities import (
 
 from .value_objects import (
     EvaluationType,
-    CriterionType,
     EvaluationStatus,
     EvaluationMetadata,
 )
@@ -49,7 +48,6 @@ __all__ = [
     "MultiCriteriaResult",
     # Value Objects
     "EvaluationType",
-    "CriterionType",
     "EvaluationStatus",
     "EvaluationMetadata",
     # Services

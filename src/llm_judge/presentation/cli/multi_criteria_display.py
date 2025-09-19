@@ -23,7 +23,6 @@ except ImportError:
     RICH_AVAILABLE = False
 
 from ...domain.evaluation.results import MultiCriteriaResult
-from ...domain.evaluation.criteria import CriterionType
 
 
 class MultiCriteriaDisplayFormatter:

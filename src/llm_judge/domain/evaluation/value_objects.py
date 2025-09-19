@@ -18,17 +18,6 @@ class EvaluationType(Enum):
     MULTI_CRITERIA = "multi_criteria"  # Multi-criteria evaluation
 
 
-class CriterionType(Enum):
-    """Types of evaluation criteria."""
-
-    FACTUAL = "factual"  # Factual accuracy, correctness
-    QUALITATIVE = "qualitative"  # Subjective quality measures
-    STRUCTURAL = "structural"  # Format, organization, structure
-    CONTEXTUAL = "contextual"  # Relevance, appropriateness
-    LINGUISTIC = "linguistic"  # Language quality, clarity
-    ETHICAL = "ethical"  # Safety, bias, appropriateness
-
-
 class EvaluationStatus(Enum):
     """Status of an evaluation."""
 
@@ -182,7 +171,6 @@ class EvaluationCriteria:
 
     name: str
     description: str
-    criterion_type: CriterionType
     weight: Weight
     scale_min: int = 1
     scale_max: int = 5

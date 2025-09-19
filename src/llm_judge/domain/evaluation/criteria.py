@@ -1,25 +1,15 @@
 """
-Evaluation criteria definitions and configurations.
+Unified evaluation criteria system.
 
-Defines the comprehensive set of evaluation criteria used for assessing
-LLM responses across multiple dimensions.
+Provides a comprehensive framework for defining, parsing, and managing
+evaluation criteria from various sources including JSON files and CLI strings.
 """
 
+import json
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Dict, List, Optional, Any
+from pathlib import Path
+from typing import Dict, List, Optional, Any, Union
 from abc import ABC, abstractmethod
-
-
-class CriterionType(Enum):
-    """Types of evaluation criteria."""
-
-    FACTUAL = "factual"  # Factual accuracy, correctness
-    QUALITATIVE = "qualitative"  # Subjective quality measures
-    STRUCTURAL = "structural"  # Format, organization, structure
-    CONTEXTUAL = "contextual"  # Relevance, appropriateness
-    LINGUISTIC = "linguistic"  # Language quality, clarity
-    ETHICAL = "ethical"  # Safety, bias, appropriateness
 
 
 @dataclass(frozen=True)
@@ -28,7 +18,6 @@ class CriterionDefinition:
 
     name: str
     description: str
-    criterion_type: CriterionType
     weight: float = 1.0
     scale_min: int = 1
     scale_max: int = 5
@@ -84,7 +73,6 @@ class EvaluationCriteria:
                 new_criterion = CriterionDefinition(
                     name=criterion.name,
                     description=criterion.description,
-                    criterion_type=criterion.criterion_type,
                     weight=normalized_weight,
                     scale_min=criterion.scale_min,
                     scale_max=criterion.scale_max,
@@ -126,25 +114,283 @@ class EvaluationCriteria:
         """Total weight of all criteria."""
         return sum(c.weight for c in self.criteria)
 
-    def get_criteria_by_type(
-        self, criterion_type: CriterionType
+
+class CriteriaParser:
+    """Parser for criteria definitions from various sources."""
+
+    @staticmethod
+    def parse_criteria_string(criteria_string: str) -> List[CriterionDefinition]:
+        """
+        Parse criteria definition string.
+
+        Format: 'name:description:weight,name2:description2:weight2'
+        Example: 'accuracy:Factual correctness:0.4,clarity:How clear the response is:0.3'
+
+        Args:
+            criteria_string: String containing criterion definitions
+
+        Returns:
+            List of CriterionDefinition objects
+
+        Raises:
+            ValueError: If format is invalid or criteria are invalid
+        """
+        if not criteria_string.strip():
+            raise ValueError("Criteria string cannot be empty")
+
+        criteria_definitions = []
+
+        # Split by comma and parse each criterion
+        criterion_strings = [s.strip() for s in criteria_string.split(",")]
+
+        for criterion_string in criterion_strings:
+            if ":" not in criterion_string:
+                raise ValueError(
+                    f"Invalid criterion format: '{criterion_string}'. Expected 'name:description:weight'"
+                )
+
+            parts = criterion_string.split(":")
+            if len(parts) < 3:
+                raise ValueError(
+                    f"Invalid criterion format: '{criterion_string}'. Expected 'name:description:weight'"
+                )
+
+            name = parts[0].strip()
+            description = parts[1].strip()
+            weight_str = parts[2].strip()
+
+            if not name:
+                raise ValueError("Criterion name cannot be empty")
+            if not description:
+                raise ValueError("Criterion description cannot be empty")
+
+            try:
+                weight = float(weight_str)
+            except ValueError:
+                raise ValueError(
+                    f"Invalid weight value for '{name}': '{weight_str}'. Must be a number."
+                )
+
+            if weight < 0:
+                raise ValueError(f"Weight for '{name}' cannot be negative: {weight}")
+
+            criteria_definitions.append(
+                CriterionDefinition(
+                    name=name,
+                    description=description,
+                    weight=weight,
+                )
+            )
+
+        return criteria_definitions
+
+    @staticmethod
+    def parse_criteria_file(
+        file_path: Union[str, Path],
     ) -> List[CriterionDefinition]:
-        """Get all criteria of a specific type."""
-        return [c for c in self.criteria if c.criterion_type == criterion_type]
+        """
+        Parse criteria definitions from JSON file.
+
+        Args:
+            file_path: Path to JSON file containing criteria definitions
+
+        Returns:
+            List of CriterionDefinition objects
+
+        Raises:
+            ValueError: If file format is invalid or criteria are invalid
+            FileNotFoundError: If file doesn't exist
+        """
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"Criteria file not found: {file_path}")
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in criteria file: {e}")
+
+        if not isinstance(data, dict):
+            raise ValueError("Criteria file must contain a JSON object")
+
+        if "criteria" not in data:
+            raise ValueError("Criteria file must contain a 'criteria' array")
+
+        if not isinstance(data["criteria"], list):
+            raise ValueError("'criteria' must be an array")
+
+        criteria_definitions = []
+        for i, criterion_data in enumerate(data["criteria"]):
+            if not isinstance(criterion_data, dict):
+                raise ValueError(f"Criterion {i} must be an object")
+
+            # Validate required fields
+            required_fields = ["name", "description"]
+            for field in required_fields:
+                if field not in criterion_data:
+                    raise ValueError(f"Criterion {i} missing required field: {field}")
+
+            # Parse criterion
+            try:
+                criterion_def = CriterionDefinition(
+                    name=criterion_data["name"],
+                    description=criterion_data["description"],
+                    weight=criterion_data.get("weight", 1.0),
+                    evaluation_prompt=criterion_data.get("evaluation_prompt", ""),
+                    examples={
+                        int(k): v for k, v in criterion_data.get("examples", {}).items()
+                    },
+                    domain_specific=criterion_data.get("domain_specific", False),
+                    requires_context=criterion_data.get("requires_context", False),
+                    metadata=criterion_data.get("metadata", {}),
+                )
+                criteria_definitions.append(criterion_def)
+            except Exception as e:
+                raise ValueError(f"Error parsing criterion {i}: {e}")
+
+        return criteria_definitions
+
+    @staticmethod
+    def parse_unified_config_file(
+        file_path: Union[str, Path],
+    ) -> tuple[List[CriterionDefinition], Dict[str, Any]]:
+        """
+        Parse unified configuration file containing both criteria and system configuration.
+
+        Args:
+            file_path: Path to JSON file containing unified configuration
+
+        Returns:
+            Tuple of (criteria_definitions, config_data)
+
+        Raises:
+            ValueError: If file format is invalid or criteria are invalid
+            FileNotFoundError: If file doesn't exist
+        """
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"Configuration file not found: {file_path}")
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in configuration file: {e}")
+
+        if not isinstance(data, dict):
+            raise ValueError("Configuration file must contain a JSON object")
+
+        if "criteria" not in data:
+            raise ValueError("Configuration file must contain a 'criteria' array")
+
+        if not isinstance(data["criteria"], list):
+            raise ValueError("'criteria' must be an array")
+
+        # Parse criteria
+        criteria_definitions = []
+        for i, criterion_data in enumerate(data["criteria"]):
+            if not isinstance(criterion_data, dict):
+                raise ValueError(f"Criterion {i} must be an object")
+
+            # Validate required fields
+            required_fields = ["name", "description"]
+            for field in required_fields:
+                if field not in criterion_data:
+                    raise ValueError(f"Criterion {i} missing required field: {field}")
+
+            # Parse criterion
+            try:
+                criterion_def = CriterionDefinition(
+                    name=criterion_data["name"],
+                    description=criterion_data["description"],
+                    weight=criterion_data.get("weight", 1.0),
+                    evaluation_prompt=criterion_data.get("evaluation_prompt", ""),
+                    examples={
+                        int(k): v for k, v in criterion_data.get("examples", {}).items()
+                    },
+                    domain_specific=criterion_data.get("domain_specific", False),
+                    requires_context=criterion_data.get("requires_context", False),
+                    metadata=criterion_data.get("metadata", {}),
+                )
+                criteria_definitions.append(criterion_def)
+            except Exception as e:
+                raise ValueError(f"Error parsing criterion {i}: {e}")
+
+        # Extract configuration data (excluding criteria)
+        config_data = {k: v for k, v in data.items() if k != "criteria"}
+
+        return criteria_definitions, config_data
+
+
+class CriteriaBuilder:
+    """Builder for creating custom evaluation criteria."""
+
+    def __init__(self):
+        self.criteria_definitions: List[CriterionDefinition] = []
+        self.name = "Custom Evaluation"
+        self.description = "Custom evaluation criteria"
+
+    def add_criterion(
+        self,
+        name: str,
+        description: str,
+        weight: float = 1.0,
+        evaluation_prompt: str = "",
+        examples: Optional[Dict[int, str]] = None,
+        domain_specific: bool = False,
+        requires_context: bool = False,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> "CriteriaBuilder":
+        """Add a custom criterion."""
+        self.criteria_definitions.append(
+            CriterionDefinition(
+                name=name,
+                description=description,
+                weight=weight,
+                evaluation_prompt=evaluation_prompt,
+                examples=examples or {},
+                domain_specific=domain_specific,
+                requires_context=requires_context,
+                metadata=metadata or {},
+            )
+        )
+        return self
+
+    def set_name(self, name: str) -> "CriteriaBuilder":
+        """Set the criteria collection name."""
+        self.name = name
+        return self
+
+    def set_description(self, description: str) -> "CriteriaBuilder":
+        """Set the criteria collection description."""
+        self.description = description
+        return self
+
+    def build(self, normalize_weights: bool = False) -> EvaluationCriteria:
+        """Build the evaluation criteria."""
+        if not self.criteria_definitions:
+            raise ValueError("No criteria defined")
+
+        return EvaluationCriteria(
+            criteria=self.criteria_definitions,
+            name=self.name,
+            description=self.description,
+            normalize_weights=normalize_weights,
+        )
 
 
 class DefaultCriteria:
     """Factory for default evaluation criteria sets."""
 
     @staticmethod
-    def comprehensive() -> EvaluationCriteria:
-        """Create comprehensive default criteria covering all major dimensions with equal weights."""
+    def balanced() -> EvaluationCriteria:
+        """Create balanced default criteria covering all major dimensions with equal weights."""
         criteria = [
             # Factual criteria
             CriterionDefinition(
                 name="accuracy",
                 description="Factual correctness and truthfulness of the response",
-                criterion_type=CriterionType.FACTUAL,
                 weight=1.0,  # Equal weight - will be normalized to 1/7
                 evaluation_prompt="Evaluate the factual accuracy of the response. Are the claims correct and verifiable?",
                 examples={
@@ -159,7 +405,6 @@ class DefaultCriteria:
             CriterionDefinition(
                 name="completeness",
                 description="How thoroughly the response addresses all aspects of the question",
-                criterion_type=CriterionType.QUALITATIVE,
                 weight=1.0,  # Equal weight - will be normalized to 1/7
                 evaluation_prompt="Assess how completely the response addresses all aspects of the original question or prompt.",
                 examples={
@@ -174,7 +419,6 @@ class DefaultCriteria:
             CriterionDefinition(
                 name="clarity",
                 description="How clear, understandable, and well-articulated the response is",
-                criterion_type=CriterionType.LINGUISTIC,
                 weight=1.0,  # Equal weight - will be normalized to 1/7
                 evaluation_prompt="Evaluate the clarity and understandability of the response. Is it well-articulated and easy to follow?",
                 examples={
@@ -189,7 +433,6 @@ class DefaultCriteria:
             CriterionDefinition(
                 name="relevance",
                 description="How well the response relates to and addresses the original prompt",
-                criterion_type=CriterionType.CONTEXTUAL,
                 weight=1.0,  # Equal weight - will be normalized to 1/7
                 evaluation_prompt="Assess how relevant the response is to the original question or prompt.",
                 examples={
@@ -204,7 +447,6 @@ class DefaultCriteria:
             CriterionDefinition(
                 name="helpfulness",
                 description="How useful and actionable the response is for the user",
-                criterion_type=CriterionType.QUALITATIVE,
                 weight=1.0,  # Equal weight - will be normalized to 1/7
                 evaluation_prompt="Evaluate how helpful and useful this response would be for someone seeking this information.",
                 examples={
@@ -219,7 +461,6 @@ class DefaultCriteria:
             CriterionDefinition(
                 name="coherence",
                 description="Logical flow and consistency of ideas throughout the response",
-                criterion_type=CriterionType.STRUCTURAL,
                 weight=1.0,  # Equal weight - will be normalized to 1/7
                 evaluation_prompt="Assess the logical flow and coherence of ideas in the response.",
                 examples={
@@ -234,7 +475,6 @@ class DefaultCriteria:
             CriterionDefinition(
                 name="appropriateness",
                 description="Suitability of tone, style, and content for the context and audience",
-                criterion_type=CriterionType.ETHICAL,
                 weight=1.0,  # Equal weight - will be normalized to 1/7
                 evaluation_prompt="Evaluate whether the tone, style, and content are appropriate for the context.",
                 examples={
@@ -249,9 +489,41 @@ class DefaultCriteria:
 
         return EvaluationCriteria(
             criteria=criteria,
-            name="Comprehensive Default Evaluation",
+            name="Balanced Default Evaluation",
             description="Complete multi-dimensional assessment with equal weights across all criteria",
         )
+
+    @staticmethod
+    def default() -> EvaluationCriteria:
+        """Load default evaluation criteria from criteria/default.json file."""
+        try:
+            criteria_definitions, config_data = (
+                CriteriaParser.parse_unified_config_file("criteria/default.json")
+            )
+            builder = CriteriaBuilder()
+
+            # Set name and description from config if available
+            if "name" in config_data:
+                builder.set_name(config_data["name"])
+            if "description" in config_data:
+                builder.set_description(config_data["description"])
+
+            for cd in criteria_definitions:
+                builder.add_criterion(
+                    name=cd.name,
+                    description=cd.description,
+                    weight=cd.weight,
+                    evaluation_prompt=cd.evaluation_prompt,
+                    examples=cd.examples,
+                    domain_specific=cd.domain_specific,
+                    requires_context=cd.requires_context,
+                    metadata=cd.metadata,
+                )
+
+            return builder.build(normalize_weights=True)
+        except Exception as e:
+            # Fallback to balanced criteria if default.json is not available
+            return DefaultCriteria.balanced()
 
     @staticmethod
     def basic() -> EvaluationCriteria:
@@ -260,19 +532,16 @@ class DefaultCriteria:
             CriterionDefinition(
                 name="accuracy",
                 description="Factual correctness of the response",
-                criterion_type=CriterionType.FACTUAL,
                 weight=1.0,  # Equal weight - will be normalized to 1/3
             ),
             CriterionDefinition(
                 name="clarity",
                 description="How clear and understandable the response is",
-                criterion_type=CriterionType.LINGUISTIC,
                 weight=1.0,  # Equal weight - will be normalized to 1/3
             ),
             CriterionDefinition(
                 name="helpfulness",
                 description="How useful the response is for the user",
-                criterion_type=CriterionType.QUALITATIVE,
                 weight=1.0,  # Equal weight - will be normalized to 1/3
             ),
         ]
@@ -290,34 +559,29 @@ class DefaultCriteria:
             CriterionDefinition(
                 name="technical_accuracy",
                 description="Correctness of technical information and concepts",
-                criterion_type=CriterionType.FACTUAL,
                 weight=1.0,  # Equal weight - will be normalized to 1/5
                 domain_specific=True,
             ),
             CriterionDefinition(
                 name="implementation_feasibility",
                 description="Whether proposed solutions are practically implementable",
-                criterion_type=CriterionType.CONTEXTUAL,
                 weight=1.0,  # Equal weight - will be normalized to 1/5
                 domain_specific=True,
             ),
             CriterionDefinition(
                 name="best_practices",
                 description="Adherence to established best practices and standards",
-                criterion_type=CriterionType.QUALITATIVE,
                 weight=1.0,  # Equal weight - will be normalized to 1/5
                 domain_specific=True,
             ),
             CriterionDefinition(
                 name="completeness",
                 description="Thoroughness of technical explanation or solution",
-                criterion_type=CriterionType.QUALITATIVE,
                 weight=1.0,  # Equal weight - will be normalized to 1/5
             ),
             CriterionDefinition(
                 name="clarity",
                 description="Technical clarity and understandability",
-                criterion_type=CriterionType.LINGUISTIC,
                 weight=1.0,  # Equal weight - will be normalized to 1/5
             ),
         ]
@@ -335,33 +599,28 @@ class DefaultCriteria:
             CriterionDefinition(
                 name="creativity",
                 description="Originality and creative value of the response",
-                criterion_type=CriterionType.QUALITATIVE,
                 weight=1.0,  # Equal weight - will be normalized to 1/5
                 domain_specific=True,
             ),
             CriterionDefinition(
                 name="engagement",
                 description="How engaging and interesting the response is",
-                criterion_type=CriterionType.QUALITATIVE,
                 weight=1.0,  # Equal weight - will be normalized to 1/5
                 domain_specific=True,
             ),
             CriterionDefinition(
                 name="coherence",
                 description="Internal consistency and logical flow",
-                criterion_type=CriterionType.STRUCTURAL,
                 weight=1.0,  # Equal weight - will be normalized to 1/5
             ),
             CriterionDefinition(
                 name="relevance",
                 description="Relevance to the original prompt or theme",
-                criterion_type=CriterionType.CONTEXTUAL,
                 weight=1.0,  # Equal weight - will be normalized to 1/5
             ),
             CriterionDefinition(
                 name="style",
                 description="Writing style and linguistic quality",
-                criterion_type=CriterionType.LINGUISTIC,
                 weight=1.0,  # Equal weight - will be normalized to 1/5
                 domain_specific=True,
             ),
@@ -374,73 +633,57 @@ class DefaultCriteria:
         )
 
     @staticmethod
-    def builder() -> "CriteriaBuilder":
+    def builder() -> CriteriaBuilder:
         """Create a builder for custom criteria."""
         return CriteriaBuilder()
 
 
-class CriteriaBuilder:
-    """Builder pattern for creating custom evaluation criteria."""
+def create_criteria_template() -> Dict[str, Any]:
+    """Create a template for criteria configuration file."""
+    return {
+        "name": "Custom Evaluation Criteria",
+        "description": "Custom evaluation criteria for specific use case",
+        "criteria": [
+            {
+                "name": "accuracy",
+                "description": "Factual correctness and truthfulness of the response",
+                "weight": 1.0,
+                "evaluation_prompt": "Evaluate the factual accuracy of the response. Are the claims correct and verifiable?",
+                "examples": {
+                    1: "Contains major factual errors or misinformation",
+                    2: "Some factual inaccuracies present",
+                    3: "Mostly accurate with minor errors",
+                    4: "Accurate with no significant factual issues",
+                    5: "Completely accurate and well-supported with evidence",
+                },
+                "domain_specific": False,
+                "requires_context": False,
+                "metadata": {},
+            },
+            {
+                "name": "clarity",
+                "description": "How clear and understandable the response is",
+                "weight": 1.0,
+                "evaluation_prompt": "Evaluate the clarity and understandability of the response.",
+                "examples": {
+                    1: "Confusing, unclear, or difficult to understand",
+                    2: "Somewhat unclear with areas of confusion",
+                    3: "Generally clear with minor unclear points",
+                    4: "Clear and well-articulated throughout",
+                    5: "Exceptionally clear, concise, and well-explained",
+                },
+                "domain_specific": False,
+                "requires_context": False,
+                "metadata": {},
+            },
+        ],
+    }
 
-    def __init__(self):
-        self.criteria: List[CriterionDefinition] = []
-        self.name = "Custom Evaluation"
-        self.description = "Custom evaluation criteria"
 
-    def add_factual_criterion(
-        self, name: str, description: str, weight: float = 1.0
-    ) -> "CriteriaBuilder":
-        """Add a factual accuracy criterion."""
-        self.criteria.append(
-            CriterionDefinition(
-                name=name,
-                description=description,
-                criterion_type=CriterionType.FACTUAL,
-                weight=weight,
-            )
-        )
-        return self
+def save_criteria_template(file_path: Union[str, Path]) -> None:
+    """Save a criteria template to file."""
+    template = create_criteria_template()
+    file_path = Path(file_path)
 
-    def add_quality_criterion(
-        self, name: str, description: str, weight: float = 1.0
-    ) -> "CriteriaBuilder":
-        """Add a qualitative criterion."""
-        self.criteria.append(
-            CriterionDefinition(
-                name=name,
-                description=description,
-                criterion_type=CriterionType.QUALITATIVE,
-                weight=weight,
-            )
-        )
-        return self
-
-    def add_linguistic_criterion(
-        self, name: str, description: str, weight: float = 1.0
-    ) -> "CriteriaBuilder":
-        """Add a linguistic quality criterion."""
-        self.criteria.append(
-            CriterionDefinition(
-                name=name,
-                description=description,
-                criterion_type=CriterionType.LINGUISTIC,
-                weight=weight,
-            )
-        )
-        return self
-
-    def set_name(self, name: str) -> "CriteriaBuilder":
-        """Set the criteria collection name."""
-        self.name = name
-        return self
-
-    def set_description(self, description: str) -> "CriteriaBuilder":
-        """Set the criteria collection description."""
-        self.description = description
-        return self
-
-    def build(self) -> EvaluationCriteria:
-        """Build the evaluation criteria."""
-        return EvaluationCriteria(
-            criteria=self.criteria.copy(), name=self.name, description=self.description
-        )
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(template, f, indent=2, ensure_ascii=False)

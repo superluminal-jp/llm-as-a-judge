@@ -1,0 +1,85 @@
+{
+  "name": "Custom Business Evaluation",
+  "description": "Custom criteria for business communication evaluation",
+  "version": "1.0",
+  "author": "Custom User",
+  "created": "2024-01-01",
+  "criteria": [
+    {
+      "name": "professional_tone",
+      "description": "Professional and appropriate tone for business context",
+      "weight": 0.3,
+      "evaluation_prompt": "Evaluate if the response maintains a professional tone suitable for business communication.",
+      "examples": {
+        "1": "Unprofessional, inappropriate, or offensive tone",
+        "2": "Somewhat unprofessional with minor issues",
+        "3": "Generally professional with room for improvement",
+        "4": "Professional tone throughout",
+        "5": "Exceptionally professional and polished"
+      },
+      "domain_specific": true,
+      "requires_context": false,
+      "metadata": {
+        "category": "communication",
+        "importance": "high"
+      }
+    },
+    {
+      "name": "clarity",
+      "description": "Clear and understandable communication",
+      "weight": 0.25,
+      "evaluation_prompt": "Assess how clear and easy to understand the response is.",
+      "examples": {
+        "1": "Confusing and unclear",
+        "2": "Somewhat unclear with confusion",
+        "3": "Generally clear with minor issues",
+        "4": "Clear and well-structured",
+        "5": "Exceptionally clear and concise"
+      },
+      "domain_specific": false,
+      "requires_context": false,
+      "metadata": {
+        "category": "communication",
+        "importance": "high"
+      }
+    },
+    {
+      "name": "actionability",
+      "description": "Provides actionable and useful information",
+      "weight": 0.25,
+      "evaluation_prompt": "Evaluate if the response provides actionable and useful information.",
+      "examples": {
+        "1": "Not actionable or useful",
+        "2": "Limited actionability",
+        "3": "Somewhat actionable",
+        "4": "Highly actionable",
+        "5": "Extremely actionable with clear next steps"
+      },
+      "domain_specific": true,
+      "requires_context": false,
+      "metadata": {
+        "category": "utility",
+        "importance": "high"
+      }
+    },
+    {
+      "name": "conciseness",
+      "description": "Concise and to the point",
+      "weight": 0.2,
+      "evaluation_prompt": "Assess if the response is concise and gets to the point efficiently.",
+      "examples": {
+        "1": "Verbose and rambling",
+        "2": "Somewhat verbose",
+        "3": "Generally concise",
+        "4": "Concise and focused",
+        "5": "Exceptionally concise and efficient"
+      },
+      "domain_specific": false,
+      "requires_context": false,
+      "metadata": {
+        "category": "communication",
+        "importance": "medium"
+      }
+    }
+  ]
+}

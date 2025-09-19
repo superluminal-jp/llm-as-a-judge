@@ -7,7 +7,6 @@ from typing import Dict, Any, Optional, List
 import logging
 
 from ...domain.evaluation.entities import CriterionDefinition
-from ...domain.evaluation.value_objects import CriterionType
 from ...domain.shared_kernel.value_objects import EntityId
 from ...domain.shared_kernel.exceptions import DomainException
 
@@ -20,7 +19,6 @@ class CreateCriteriaCommand:
 
     name: str
     description: str
-    criterion_type: CriterionType
     weight: float = 1.0
     scale_min: int = 1
     scale_max: int = 5
@@ -81,7 +79,6 @@ class DeleteCriteriaResult:
 class ListCriteriaCommand:
     """Command for listing criteria."""
 
-    criterion_type: Optional[CriterionType] = None
     limit: int = 100
     offset: int = 0
 
@@ -108,7 +105,6 @@ class CreateCriteriaUseCase:
             criterion = CriterionDefinition(
                 name=command.name,
                 description=command.description,
-                criterion_type=command.criterion_type,
                 weight=command.weight,
                 scale_min=command.scale_min,
                 scale_max=command.scale_max,
@@ -216,15 +212,9 @@ class ListCriteriaUseCase:
     async def execute(self, command: ListCriteriaCommand) -> ListCriteriaResult:
         """Execute criteria listing."""
         try:
-            if command.criterion_type:
-                criteria = await self.criteria_repository.find_by_type(
-                    command.criterion_type.value,
-                    limit=command.limit,
-                )
-            else:
-                criteria = await self.criteria_repository.find_all(
-                    limit=command.limit,
-                )
+            criteria = await self.criteria_repository.find_all(
+                limit=command.limit,
+            )
 
             total_count = await self.criteria_repository.count()
 
