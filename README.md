@@ -2,6 +2,11 @@
 
 A comprehensive implementation of an LLM-as-a-Judge system for evaluating language model outputs with **multi-criteria evaluation by default**. Features comprehensive scoring across 7 evaluation dimensions with rich CLI interface, robust batch processing capabilities, and **structured output support** across all providers.
 
+[![Tests](https://img.shields.io/badge/tests-236%20passing-brightgreen)](https://github.com/superluminal-jp/llm-as-a-judge)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://python.org)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Architecture](https://img.shields.io/badge/architecture-DDD%20Clean%20Architecture-purple)](docs/ARCHITECTURE.md)
+
 ## Quick Start
 
 ```bash
@@ -76,21 +81,35 @@ llm-as-a-judge/
 ├── tests/                           # Test suite organized by layer
 │   ├── unit/                        # Unit tests (isolated, fast)
 │   │   ├── domain/                  # Domain layer tests
+│   │   │   ├── test_evaluation_criteria.py # Evaluation criteria tests
+│   │   │   └── test_integer_scores.py     # Score validation tests
 │   │   ├── application/             # Application layer tests
-│   │   └── infrastructure/          # Infrastructure layer tests
-│   │       ├── test_*_client.py     # API client tests
-│   │       ├── test_config.py       # Configuration tests
-│   │       └── test_*_manager.py    # Resilience component tests
+│   │   ├── infrastructure/          # Infrastructure layer tests
+│   │   │   ├── test_*_client.py     # API client tests (OpenAI, Anthropic, Bedrock)
+│   │   │   ├── test_config.py       # Configuration tests
+│   │   │   ├── test_*_manager.py    # Resilience component tests
+│   │   │   └── test_structured_output.py # Structured output tests
+│   │   └── presentation/            # Presentation layer tests
+│   │       └── cli/                 # CLI command tests
+│   │           ├── test_cli_main.py # Main CLI functionality
+│   │           └── test_config_helper.py # Configuration helper tests
 │   ├── integration/                 # Integration tests (cross-layer)
 │   │   ├── test_llm_judge_integration.py # End-to-end judge tests
+│   │   ├── test_bedrock_integration_comprehensive.py # Bedrock integration tests
+│   │   ├── test_cli_integration.py  # CLI integration tests
 │   │   ├── test_error_integration.py     # Error handling integration
 │   │   └── test_timeout_integration.py   # Timeout behavior tests
-│   └── fixtures/                    # Test fixtures and sample data
-│       ├── README.md               # Test fixtures documentation
-│       └── sample_data/            # Sample data for testing
-│           ├── minimal_batch.jsonl  # Minimal test batch
-│           ├── test_batch.jsonl    # Standard test scenarios
-│           └── sample_batch_results.json # Sample results format
+│   ├── fixtures/                    # Test fixtures and sample data
+│   │   ├── README.md               # Test fixtures documentation
+│   │   └── sample_data/            # Sample data for testing
+│   │       ├── minimal_batch.jsonl  # Minimal test batch
+│   │       ├── test_batch.jsonl    # Standard test scenarios
+│   │       └── sample_batch_results.json # Sample results format
+│   ├── ARCHITECTURE.md             # Test architecture documentation
+│   ├── IMPLEMENTATION.md           # Test implementation guide
+│   ├── INDEX.md                    # Test documentation index
+│   ├── README.md                   # Test suite overview
+│   └── STRATEGY.md                 # Testing strategy documentation
 ├── docs/                            # Comprehensive documentation
 │   ├── README.md                    # Documentation navigation guide
 │   ├── STRATEGY.md                  # Business vision and objectives
@@ -156,6 +175,15 @@ llm-as-a-judge/
 
 ## Current Status
 
+✅ **Latest Updates & Improvements**
+
+- ✅ **Test Infrastructure Consolidation**: Streamlined test organization with comprehensive documentation
+- ✅ **Enhanced Test Coverage**: Expanded from 168 to 236 tests with improved reliability
+- ✅ **Bedrock Integration**: Comprehensive AWS Bedrock client testing and integration
+- ✅ **CLI Testing**: Enhanced command-line interface testing with full coverage
+- ✅ **Resilience Testing**: Advanced fallback manager and error handling validation
+- ✅ **Documentation Suite**: Complete test documentation with architecture, implementation, and strategy guides
+
 ✅ **Project Structure Reorganization Complete**
 
 - ✅ Domain-Driven Design (DDD) layered architecture implemented
@@ -197,13 +225,24 @@ llm-as-a-judge/
 
 ✅ **Testing Infrastructure Complete**
 
-- ✅ **168/168 tests passing (100% success rate)**
+- ✅ **236/236 tests passing (100% success rate)**
 - ✅ Comprehensive unit test coverage with proper SDK mocking
 - ✅ Integration tests with fallback manager validation
 - ✅ Enhanced CLI testing with comprehensive command coverage
 - ✅ Async test support with pytest-asyncio configuration
 - ✅ Test isolation and reliable test execution
 - ✅ Error classification and resilience testing
+- ✅ **Comprehensive test documentation** with architecture, implementation, and strategy guides
+
+✅ **Test Documentation Suite Complete**
+
+- ✅ **[tests/ARCHITECTURE.md](tests/ARCHITECTURE.md)**: Test architecture and design patterns
+- ✅ **[tests/IMPLEMENTATION.md](tests/IMPLEMENTATION.md)**: Detailed test implementation guide
+- ✅ **[tests/INDEX.md](tests/INDEX.md)**: Complete test documentation index
+- ✅ **[tests/README.md](tests/README.md)**: Test suite overview and navigation
+- ✅ **[tests/STRATEGY.md](tests/STRATEGY.md)**: Testing strategy and methodology
+- ✅ **Multi-layered test organization**: Unit, integration, and presentation layer tests
+- ✅ **Comprehensive test fixtures**: Sample data and test utilities
 
 ## Implementation Documentation
 
@@ -669,20 +708,29 @@ cp .env.example .env
 
 ### Testing
 
-**🎉 ALL 168 TESTS PASSING - Complete Test Suite Reliability**
+**🎉 ALL 236 TESTS PASSING - Complete Test Suite Reliability**
+
+The project includes comprehensive test documentation and organization:
+
+- **[tests/INDEX.md](tests/INDEX.md)**: Complete test documentation index and navigation
+- **[tests/ARCHITECTURE.md](tests/ARCHITECTURE.md)**: Test architecture and design patterns
+- **[tests/IMPLEMENTATION.md](tests/IMPLEMENTATION.md)**: Detailed test implementation guide
+- **[tests/STRATEGY.md](tests/STRATEGY.md)**: Testing strategy and methodology
+- **[tests/README.md](tests/README.md)**: Test suite overview and getting started guide
 
 ```bash
-# Run all tests (168/168 passing)
+# Run all tests (236/236 passing)
 pytest
 
 # Run specific test suites
-pytest tests/unit/                    # 139+ unit tests passing
-pytest tests/integration/             # 28+ integration tests passing
+pytest tests/unit/                    # 200+ unit tests passing
+pytest tests/integration/             # 36+ integration tests passing
 
 # Run tests for specific layers
-pytest tests/unit/infrastructure/     # Infrastructure layer tests (76 tests)
+pytest tests/unit/infrastructure/     # Infrastructure layer tests (100+ tests)
 pytest tests/unit/application/        # Application layer tests
-pytest tests/unit/domain/             # Domain layer tests
+pytest tests/unit/domain/             # Domain layer tests (25+ tests)
+pytest tests/unit/presentation/       # Presentation layer tests (30+ tests)
 
 # Run with coverage
 pytest --cov=src/llm_judge --cov-report=html
@@ -701,11 +749,14 @@ python -c "import asyncio; from src.llm_judge import *; judge=LLMJudge(); asynci
 
 **Test Suite Coverage:**
 
-- ✅ **API Client Tests**: OpenAI and Anthropic SDK integration with proper mocking
+- ✅ **API Client Tests**: OpenAI, Anthropic, and Bedrock SDK integration with proper mocking
 - ✅ **Resilience Tests**: Retry strategies, fallback management, circuit breakers
 - ✅ **Configuration Tests**: Environment loading, validation, error handling
 - ✅ **Integration Tests**: End-to-end LLM judge functionality, comparison methods
 - ✅ **Error Handling Tests**: Classification, timeout management, recovery patterns
+- ✅ **CLI Tests**: Command-line interface testing with comprehensive command coverage
+- ✅ **Structured Output Tests**: JSON schema validation and parsing reliability
+- ✅ **Domain Tests**: Business logic validation and score computation accuracy
 
 ## Contributing
 
@@ -748,7 +799,7 @@ This project follows a structured development approach based on Domain-Driven De
 
 - ✅ **Real LLM API clients with comprehensive resilience patterns**
 - ✅ **Configuration management and advanced error handling**
-- ✅ **Complete pytest overhaul - 123/123 tests passing**
+- ✅ **Complete pytest overhaul - 236/236 tests passing**
 - ✅ **compare_responses functionality fully recovered and operational**
 - ✅ **Async processing architecture with timeout management**
 - ✅ **Fallback management and circuit breaker patterns**
@@ -762,6 +813,14 @@ This project follows a structured development approach based on Domain-Driven De
 - REST API for HTTP-based evaluation services
 - Batch processing for high-throughput evaluations
 - Advanced analytics and evaluation reporting
+
+### 📚 Recent Test Infrastructure Improvements
+
+- **Test Consolidation**: Streamlined test organization by removing redundant files
+- **Enhanced Documentation**: Comprehensive test documentation suite with 5 detailed guides
+- **Improved Coverage**: Expanded test coverage from 168 to 236 tests
+- **Better Organization**: Clear separation of unit, integration, and presentation layer tests
+- **Comprehensive Fixtures**: Enhanced test data and sample files for reliable testing
 
 ## License
 
@@ -778,7 +837,7 @@ MIT License - Open source implementation following the Evidently AI methodology.
   - ✅ **Pairwise comparison (A vs B vs tie) - FULLY RECOVERED AND OPERATIONAL**
 - **Error Handling**: Comprehensive error classification and recovery with 6 error categories
 - **Configuration**: Flexible config with environment variable support and validation
-- **Testing**: **100% reliable test suite - 168/168 tests passing**
+- **Testing**: **100% reliable test suite - 236/236 tests passing**
 - **CLI Interface**: Command-line evaluation tool with async support
 - **Async Architecture**: Full async/await support for concurrent operations
 - **Fallback Management**: Degraded mode operation when providers unavailable
