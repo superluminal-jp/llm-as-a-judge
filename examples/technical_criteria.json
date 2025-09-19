@@ -1,0 +1,111 @@
+{
+  "name": "Technical Documentation Evaluation Criteria",
+  "description": "Specialized criteria for evaluating technical documentation, API docs, and code explanations",
+  "criteria": [
+    {
+      "name": "technical_accuracy",
+      "description": "Correctness of technical information and concepts",
+      "criterion_type": "factual",
+      "weight": 1.0,
+      "evaluation_prompt": "Evaluate the technical accuracy of the response. Are the technical concepts, APIs, and implementations correct?",
+      "examples": {
+        "1": "Contains major technical errors or incorrect information",
+        "2": "Some technical inaccuracies present",
+        "3": "Mostly technically accurate with minor errors",
+        "4": "Technically accurate with no significant issues",
+        "5": "Completely technically accurate and well-verified"
+      },
+      "domain_specific": true,
+      "requires_context": true,
+      "metadata": {
+        "importance": "high",
+        "category": "technical_quality",
+        "context": "technical_documentation"
+      }
+    },
+    {
+      "name": "implementation_feasibility",
+      "description": "Whether proposed solutions are practically implementable",
+      "criterion_type": "contextual",
+      "weight": 1.0,
+      "evaluation_prompt": "Assess whether the proposed solutions, code examples, or technical approaches are practically implementable. Are they realistic and achievable?",
+      "examples": {
+        "1": "Proposed solutions are not implementable or unrealistic",
+        "2": "Some solutions have implementation challenges",
+        "3": "Most solutions are implementable with minor issues",
+        "4": "Solutions are well-implementable and practical",
+        "5": "All solutions are highly implementable and well-thought-out"
+      },
+      "domain_specific": true,
+      "requires_context": true,
+      "metadata": {
+        "importance": "high",
+        "category": "practicality",
+        "context": "technical_documentation"
+      }
+    },
+    {
+      "name": "best_practices",
+      "description": "Adherence to established best practices and standards",
+      "criterion_type": "qualitative",
+      "weight": 1.0,
+      "evaluation_prompt": "Evaluate whether the response follows established best practices, coding standards, and industry conventions.",
+      "examples": {
+        "1": "Does not follow best practices or standards",
+        "2": "Some best practices followed but many violations",
+        "3": "Generally follows best practices with minor violations",
+        "4": "Follows best practices well with few issues",
+        "5": "Exemplary adherence to best practices and standards"
+      },
+      "domain_specific": true,
+      "requires_context": true,
+      "metadata": {
+        "importance": "medium",
+        "category": "quality_standards",
+        "context": "technical_documentation"
+      }
+    },
+    {
+      "name": "completeness",
+      "description": "Thoroughness of technical explanation or solution",
+      "criterion_type": "qualitative",
+      "weight": 1.0,
+      "evaluation_prompt": "Assess how completely the technical explanation covers all necessary aspects. Are all required details included?",
+      "examples": {
+        "1": "Very incomplete technical explanation",
+        "2": "Covers some aspects but misses important details",
+        "3": "Covers most aspects adequately",
+        "4": "Comprehensive technical coverage with minor gaps",
+        "5": "Thoroughly covers all technical aspects with appropriate detail"
+      },
+      "domain_specific": false,
+      "requires_context": true,
+      "metadata": {
+        "importance": "high",
+        "category": "content_quality",
+        "context": "technical_documentation"
+      }
+    },
+    {
+      "name": "clarity",
+      "description": "Technical clarity and understandability",
+      "criterion_type": "linguistic",
+      "weight": 1.0,
+      "evaluation_prompt": "Evaluate how clear and understandable the technical explanation is. Is it accessible to the target audience?",
+      "examples": {
+        "1": "Technically unclear or confusing",
+        "2": "Somewhat unclear with technical jargon issues",
+        "3": "Generally clear with minor unclear points",
+        "4": "Clear and well-explained technically",
+        "5": "Exceptionally clear with excellent technical communication"
+      },
+      "domain_specific": true,
+      "requires_context": true,
+      "metadata": {
+        "importance": "medium",
+        "category": "presentation",
+        "context": "technical_documentation"
+      }
+    }
+  ]
+}
