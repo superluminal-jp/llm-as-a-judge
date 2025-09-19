@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document provides comprehensive API reference for the LLM-as-a-Judge system, including the new multi-criteria evaluation capabilities.
+This document provides comprehensive API reference for the LLM-as-a-Judge system, including multi-criteria evaluation, custom criteria definition, data persistence, and weight configuration capabilities.
 
 ## Core Classes
 
@@ -31,7 +31,8 @@ async def evaluate_multi_criteria(
     self,
     candidate: CandidateResponse,
     criteria: Optional[EvaluationCriteria] = None,
-    criteria_type: Optional[str] = None
+    criteria_type: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None
 ) -> MultiCriteriaResult
 ```
 
@@ -40,6 +41,7 @@ async def evaluate_multi_criteria(
 - `candidate` (CandidateResponse): The response to evaluate
 - `criteria` (Optional[EvaluationCriteria]): Custom evaluation criteria. If None, uses default criteria based on criteria_type
 - `criteria_type` (Optional[str]): Type of default criteria to use ("comprehensive", "basic", "technical", "creative"). If None, uses config default
+- `metadata` (Optional[Dict[str, Any]]): Additional metadata for evaluation tracking and persistence
 
 **Returns:** `MultiCriteriaResult` with detailed scores across all criteria
 
@@ -375,6 +377,146 @@ class CriterionType(Enum):
     CONTEXTUAL = "contextual"     # Context appropriateness
     LINGUISTIC = "linguistic"     # Language quality
     ETHICAL = "ethical"           # Ethical considerations
+```
+
+## Data Persistence & Management
+
+### PersistenceService
+
+Service for managing evaluation data persistence and caching.
+
+```python
+class PersistenceServiceImpl:
+    def __init__(self, config: PersistenceConfig)
+```
+
+#### Methods
+
+```python
+async def save_evaluation(
+    self,
+    candidate: CandidateResponse,
+    result: MultiCriteriaResult,
+    criteria_hash: str,
+    judge_model: str,
+    provider: str,
+    evaluation_time_ms: int,
+    metadata: Optional[Dict[str, Any]] = None
+) -> str
+```
+
+**Parameters:**
+
+- `candidate`: The evaluated response
+- `result`: The evaluation result
+- `criteria_hash`: Hash of criteria used for evaluation
+- `judge_model`: Model used as judge
+- `provider`: LLM provider used
+- `evaluation_time_ms`: Evaluation duration in milliseconds
+- `metadata`: Additional metadata
+
+**Returns:** Evaluation record ID
+
+```python
+async def get_evaluation(
+    self,
+    prompt: str,
+    response: str,
+    criteria_hash: str,
+    judge_model: str
+) -> Optional[EvaluationRecord]
+```
+
+**Parameters:**
+
+- `prompt`: Original prompt
+- `response`: Response text
+- `criteria_hash`: Hash of criteria used
+- `judge_model`: Judge model used
+
+**Returns:** Cached evaluation record if found
+
+```python
+async def list_evaluations(
+    self,
+    limit: int = 10,
+    offset: int = 0
+) -> List[EvaluationRecord]
+```
+
+**Parameters:**
+
+- `limit`: Maximum number of records to return
+- `offset`: Number of records to skip
+
+**Returns:** List of evaluation records
+
+```python
+async def export_evaluations(
+    self,
+    output_file: Path,
+    limit: Optional[int] = None
+) -> int
+```
+
+**Parameters:**
+
+- `output_file`: Path to export file
+- `limit`: Maximum number of records to export
+
+**Returns:** Number of records exported
+
+```python
+async def clean_cache(self, force: bool = False) -> int
+```
+
+**Parameters:**
+
+- `force`: Force cleanup without confirmation
+
+**Returns:** Number of cache entries cleaned
+
+### Custom Criteria System
+
+#### CustomCriteriaDefinition
+
+Definition of custom evaluation criteria.
+
+```python
+@dataclass
+class CustomCriteriaDefinition:
+    name: str
+    description: str
+    criterion_type: CriterionType
+    weight: float = 1.0
+    scale_min: int = 1
+    scale_max: int = 5
+    evaluation_prompt: str = ""
+    examples: Dict[int, str] = field(default_factory=dict)
+```
+
+#### CustomCriteriaParser
+
+Parser for custom criteria from strings and files.
+
+```python
+class CustomCriteriaParser:
+    @staticmethod
+    def parse_criteria_string(criteria_string: str) -> List[CustomCriteriaDefinition]
+
+    @staticmethod
+    def parse_criteria_file(file_path: Union[str, Path]) -> List[CustomCriteriaDefinition]
+```
+
+#### CustomCriteriaBuilder
+
+Builder for creating EvaluationCriteria from custom definitions.
+
+```python
+class CustomCriteriaBuilder:
+    def __init__(self)
+    def add_criterion(self, criterion: CustomCriteriaDefinition) -> 'CustomCriteriaBuilder'
+    def build(self, name: str, description: str = "", normalize_weights: bool = False) -> EvaluationCriteria
 ```
 
 ## Batch Processing API
@@ -744,11 +886,24 @@ python -m src.llm_judge evaluate "Question" "Answer" --output json
 - `--model MODEL`: Model that generated the response
 - `--criteria-type {comprehensive,basic,technical,creative}`: Type of default criteria to use
 - `--show-detailed`: Show detailed multi-criteria breakdown
+- `--custom-criteria CRITERIA_STRING`: Custom criteria definition string
+- `--criteria-file PATH`: Path to JSON file containing custom criteria
+- `--list-criteria-types`: List available criterion types and exit
 
 **Compare Command Options:**
 
 - `--model-a MODEL`: Model that generated response A
 - `--model-b MODEL`: Model that generated response B
+
+**Data Management Commands:**
+
+- `data list [--limit N] [--format {table,json}]`: List stored evaluation results
+- `data export FILE [--limit N]`: Export evaluation results to JSON file
+- `data clean-cache [--force]`: Clean evaluation cache
+
+**Template Commands:**
+
+- `create-criteria-template FILE`: Create a criteria template JSON file
 
 #### Environment Variables
 
