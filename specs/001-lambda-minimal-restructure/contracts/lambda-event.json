@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LlmJudge Lambda Event",
+  "description": "Input event schema for the LLM-as-a-Judge Lambda function",
+  "type": "object",
+  "required": ["prompt", "response"],
+  "properties": {
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The prompt or question that was given to the LLM"
+    },
+    "response": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The LLM response to evaluate"
+    },
+    "criteria_file": {
+      "type": "string",
+      "pattern": "^s3://[a-zA-Z0-9._-]+/.+\\.json$",
+      "description": "S3 URI to a JSON file defining evaluation criteria. If omitted, default criteria are used.",
+      "examples": ["s3://my-bucket/criteria/accuracy.json"]
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["anthropic", "openai", "bedrock"],
+      "description": "LLM provider to use as judge. Defaults to DEFAULT_PROVIDER env var."
+    },
+    "judge_model": {
+      "type": "string",
+      "description": "Specific model name to use. Defaults to provider-specific env var (ANTHROPIC_MODEL, etc.)"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "prompt": "What is machine learning?",
+      "response": "Machine learning is a subset of AI...",
+      "provider": "anthropic"
+    },
+    {
+      "prompt": "Explain recursion",
+      "response": "Recursion is when a function calls itself...",
+      "criteria_file": "s3://my-criteria-bucket/technical.json",
+      "provider": "bedrock",
+      "judge_model": "amazon.nova-premier-v1:0"
+    }
+  ]
+}

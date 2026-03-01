@@ -71,3 +71,9 @@ Thumbs.db
 
 # Data
 data/
+
+# CDK build artifacts
+cdk.out/
+
+# Test result files
+test_results.json

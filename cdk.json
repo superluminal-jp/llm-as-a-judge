@@ -1,0 +1,10 @@
+{
+  "app": "python3 cdk/app.py",
+  "context": {
+    "default_provider": "anthropic",
+    "criteria_bucket_arn": "",
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "@aws-cdk/core:checkSecretUsage": true,
+    "@aws-cdk/aws-iam:minimizePolicies": true
+  }
+}

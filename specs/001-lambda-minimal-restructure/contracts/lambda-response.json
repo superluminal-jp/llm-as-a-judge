@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LlmJudge Lambda Response",
+  "description": "Success response schema from the LLM-as-a-Judge Lambda function",
+  "type": "object",
+  "required": ["overall_score", "criterion_scores", "reasoning", "judge_model", "provider"],
+  "properties": {
+    "overall_score": {
+      "type": "number",
+      "minimum": 1.0,
+      "maximum": 5.0,
+      "description": "Weighted average score across all criteria"
+    },
+    "criterion_scores": {
+      "type": "object",
+      "description": "Per-criterion scores keyed by criterion name",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 5
+      },
+      "examples": [
+        {"accuracy": 4.5, "clarity": 3.0, "helpfulness": 4.0}
+      ]
+    },
+    "reasoning": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Overall evaluation reasoning from the judge LLM"
+    },
+    "judge_model": {
+      "type": "string",
+      "description": "The model name used as judge"
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["anthropic", "openai", "bedrock"],
+      "description": "The LLM provider used"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "overall_score": 4.2,
+      "criterion_scores": {
+        "accuracy": 4.5,
+        "clarity": 4.0,
+        "helpfulness": 4.0
+      },
+      "reasoning": "The response demonstrates strong factual accuracy and is clearly written...",
+      "judge_model": "claude-sonnet-4-20250514",
+      "provider": "anthropic"
+    }
+  ]
+}

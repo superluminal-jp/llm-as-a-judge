@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LlmJudge Criteria File",
+  "description": "Schema for criteria JSON files stored in S3",
+  "type": "object",
+  "required": ["criteria"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Human-readable name for this criteria set"
+    },
+    "criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "description"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_]+$",
+            "description": "Criterion identifier (alphanumeric + underscore)"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What this criterion measures"
+          },
+          "weight": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Relative weight (auto-normalized to sum to 1.0). Default: 1.0"
+          },
+          "evaluation_prompt": {
+            "type": "string",
+            "description": "Additional guidance for the judge LLM on how to score this criterion"
+          },
+          "examples": {
+            "type": "object",
+            "description": "Score-to-example mapping for scoring guidance",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "examples": [
+              {"1": "Poor example", "3": "Average example", "5": "Excellent example"}
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "name": "Technical Evaluation",
+      "criteria": [
+        {
+          "name": "accuracy",
+          "description": "Factual correctness of the response",
+          "weight": 0.5,
+          "evaluation_prompt": "Evaluate whether all technical claims are correct",
+          "examples": {
+            "1": "Major factual errors",
+            "5": "Completely accurate and verifiable"
+          }
+        },
+        {
+          "name": "clarity",
+          "description": "Clarity and readability of the explanation",
+          "weight": 0.5
+        }
+      ]
+    }
+  ]
+}
