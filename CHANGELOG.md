@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- `reasoning` field is now an LLM-generated executive summary (総評) synthesising all per-criterion findings, replacing the previous score-list string; one additional LLM call is made after parallel criterion evaluation
 - Prompt builder includes numbered evaluation steps and requests `step_reasoning` JSON array when `evaluation_steps` are defined
 - Response parser embeds `step_reasoning` into `criterion_reasoning` as `Step N: … \n\nFinal: …` format
 - `_aggregate_parallel_results` now populates `criterion_reasoning` dict (previously discarded per-criterion reasoning)

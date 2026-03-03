@@ -157,6 +157,7 @@ class TestEvaluate:
         mock_provider.complete.side_effect = [
             json.dumps({"score": 4.0, "reasoning": "Good accuracy."}),
             json.dumps({"score": 3.0, "reasoning": "Clear enough."}),
+            "accuracyは4.0と高く正確だが、clarityは3.0とやや改善の余地がある。",
         ]
 
         result = evaluate(
@@ -168,23 +169,24 @@ class TestEvaluate:
             timeout=30,
         )
 
-        assert mock_provider.complete.call_count == 2
+        # 2 criterion calls + 1 summary call
+        assert mock_provider.complete.call_count == 3
         assert result["criterion_scores"] == {"accuracy": 4.0, "clarity": 3.0}
         assert "overall_score" not in result
-        assert "総評" in result["reasoning"]
-        assert "accuracy" in result["reasoning"] and "4.0" in result["reasoning"]
-        assert "clarity" in result["reasoning"] and "3.0" in result["reasoning"]
-        assert "総合スコアは算出していない" in result["reasoning"]
+        assert result["reasoning"] == "accuracyは4.0と高く正確だが、clarityは3.0とやや改善の余地がある。"
         assert result["criterion_reasoning"]["accuracy"] == "Good accuracy."
         assert result["criterion_reasoning"]["clarity"] == "Clear enough."
 
     def test_evaluate_with_steps_surfaces_step_reasoning(self, stepped_criteria):
         mock_provider = MagicMock()
-        mock_provider.complete.return_value = json.dumps({
-            "step_reasoning": ["Yes, facts verified.", "No contradictions."],
-            "score": 4.0,
-            "reasoning": "Overall accurate.",
-        })
+        mock_provider.complete.side_effect = [
+            json.dumps({
+                "step_reasoning": ["Yes, facts verified.", "No contradictions."],
+                "score": 4.0,
+                "reasoning": "Overall accurate.",
+            }),
+            "accuracyは4.0。段階的な評価により事実確認と矛盾チェックを通過した。",
+        ]
 
         result = evaluate(
             prompt="Q?",
@@ -205,6 +207,7 @@ class TestEvaluate:
         mock_provider.complete.side_effect = [
             json.dumps({"score": 4.0, "reasoning": "OK."}),
             ProviderError("Rate limited"),
+            "summary not reached",
         ]
 
         with pytest.raises(ProviderError, match="Rate limited"):

@@ -202,23 +202,50 @@ def parse_single_criterion_response(
     return (score, reasoning)
 
 
+def _build_summary_prompt(
+    prompt: str,
+    response: str,
+    results: list[tuple[str, float, str]],
+) -> str:
+    """Build a prompt that asks the judge LLM to synthesise all criterion results."""
+    criterion_blocks = []
+    for name, score, reasoning in results:
+        criterion_blocks.append(f"### {name} (score: {score}/5)\n{reasoning}")
+    criteria_section = "\n\n".join(criterion_blocks)
+
+    return f"""You are an expert evaluator. All per-criterion evaluation results are provided below.
+Write a concise 総評 (executive summary) in Japanese that synthesises the findings.
+
+## Original Prompt
+
+{prompt}
+
+## Response Evaluated
+
+{response}
+
+## Per-Criterion Results
+
+{criteria_section}
+
+## Instructions
+
+- Synthesise key strengths and weaknesses across all criteria in 3–5 sentences.
+- Reference specific criterion names and scores where helpful.
+- Do NOT state an overall numeric score.
+- Return only the summary text in Japanese, with no headings or extra formatting.
+"""
+
+
 def _aggregate_parallel_results(
     results: list[tuple[str, float, str]],
-    criteria: "EvaluationCriteria",
+    reasoning: str,
     judge_model: str,
     provider: str,
 ) -> dict:
-    """Combine per-criterion (name, score, reasoning) into the result dict.
-
-    No score aggregation: each criterion has its own meaning, so overall_score
-    is not computed. Reasoning is an executive summary (総評) only; per-criterion
-    reasoning (including step-by-step results) is surfaced in criterion_reasoning.
-    """
+    """Combine per-criterion (name, score, reasoning) into the result dict."""
     criterion_scores = {name: score for name, score, _ in results}
-    criterion_reasoning = {name: reasoning for name, _, reasoning in results}
-    # Executive summary: short 総評 listing each criterion and score (no aggregation).
-    score_parts = [f"{name} {score}" for name, score, _ in results]
-    reasoning = f"総評: 各クライテリアの評価結果は以下のとおりである。{', '.join(score_parts)}。各観点は独立した意味を持つため総合スコアは算出していない。"
+    criterion_reasoning = {name: r for name, _, r in results}
 
     return {
         "criterion_scores": criterion_scores,
@@ -326,6 +353,21 @@ def evaluate(
 
     results.sort(key=lambda r: order[r[0]])
 
+    # Generate executive summary (総評) via one additional LLM call.
+    summary_prompt = _build_summary_prompt(prompt, response, results)
+    llm_start = time.perf_counter()
+    reasoning = provider.complete(
+        messages=[{"role": "user", "content": summary_prompt}],
+        model=model,
+        timeout=timeout,
+    )
+    llm_duration_ms = round((time.perf_counter() - llm_start) * 1000)
+    if llm_duration_ms >= _LLM_DURATION_LOG_THRESHOLD_MS:
+        logger.info(
+            "Judge LLM call completed (summary)",
+            extra={"model": model, "duration_ms": llm_duration_ms},
+        )
+
     return _aggregate_parallel_results(
-        results, criteria, judge_model=model, provider=_provider_label
+        results, reasoning=reasoning, judge_model=model, provider=_provider_label
     )
