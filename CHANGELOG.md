@@ -17,7 +17,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- `BEDROCK_MODEL` default changed from `anthropic.claude-sonnet-4-6` to `amazon.nova-lite-v1:0` — Claude models require a cross-region inference profile ARN in ap-northeast-1 and cannot be invoked with on-demand throughput directly
+- `BEDROCK_MODEL` default changed to `jp.anthropic.claude-sonnet-4-6` (JP cross-region inference profile for ap-northeast-1/ap-northeast-3); previously `anthropic.claude-sonnet-4-6` required an inference profile ARN
+- `BedrockProvider.complete` now retries up to 3 times with exponential backoff for `ThrottlingException` and `AccessDeniedException` (transient failures from cross-region routing under parallel load) — Claude models require a cross-region inference profile ARN in ap-northeast-1 and cannot be invoked with on-demand throughput directly
 
 ### Changed
 

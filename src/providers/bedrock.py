@@ -10,6 +10,7 @@ with all Bedrock foundation models, including Amazon Nova and Anthropic Claude.
 
 from __future__ import annotations
 
+import random
 import time
 from typing import TYPE_CHECKING
 
@@ -77,49 +78,77 @@ class BedrockProvider:
             for msg in messages
         ]
 
+        # Retryable error codes: ThrottlingException and AccessDeniedException
+        # caused by cross-region inference profile routing transient failures.
+        _RETRYABLE = frozenset({"ThrottlingException", "AccessDeniedException"})
+        _MAX_RETRIES = 3
+        _BASE_DELAY = 1.0
+
         start = time.perf_counter()
-        try:
-            response = self._client.converse(
-                modelId=model,
-                messages=bedrock_messages,
-            )
-            text: str = response["output"]["message"]["content"][0]["text"]
-            duration_ms = round((time.perf_counter() - start) * 1000)
-            logger.debug(
-                "Bedrock converse call succeeded",
-                extra={
-                    "model": model,
-                    "response_length": len(text),
-                    "duration_ms": duration_ms,
-                },
-            )
-            return text
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                response = self._client.converse(
+                    modelId=model,
+                    messages=bedrock_messages,
+                )
+                text: str = response["output"]["message"]["content"][0]["text"]
+                duration_ms = round((time.perf_counter() - start) * 1000)
+                logger.debug(
+                    "Bedrock converse call succeeded",
+                    extra={
+                        "model": model,
+                        "response_length": len(text),
+                        "duration_ms": duration_ms,
+                        "attempt": attempt,
+                    },
+                )
+                return text
 
-        except TimeoutError as exc:
-            duration_ms = round((time.perf_counter() - start) * 1000)
-            logger.error(
-                "Bedrock API request timed out",
-                extra={"model": model, "duration_ms": duration_ms},
-                exc_info=True,
-            )
-            raise ProviderError(
-                "Bedrock API request timed out. Retry or increase read_timeout in "
-                "botocore config."
-            ) from exc
+            except TimeoutError as exc:
+                duration_ms = round((time.perf_counter() - start) * 1000)
+                logger.error(
+                    "Bedrock API request timed out",
+                    extra={"model": model, "duration_ms": duration_ms},
+                    exc_info=True,
+                )
+                raise ProviderError(
+                    "Bedrock API request timed out. Retry or increase read_timeout in "
+                    "botocore config."
+                ) from exc
 
-        except botocore.exceptions.ClientError as exc:
-            duration_ms = round((time.perf_counter() - start) * 1000)
-            error_code = exc.response["Error"]["Code"]
-            error_message = exc.response["Error"]["Message"]
-            logger.error(
-                "Bedrock API error",
-                extra={
-                    "model": model,
-                    "error_code": error_code,
-                    "duration_ms": duration_ms,
-                },
-                exc_info=True,
-            )
-            raise ProviderError(
-                f"Bedrock API error [{error_code}]: {error_message}"
-            ) from exc
+            except botocore.exceptions.ClientError as exc:
+                error_code = exc.response["Error"]["Code"]
+                error_message = exc.response["Error"]["Message"]
+                if error_code in _RETRYABLE and attempt < _MAX_RETRIES:
+                    delay = _BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5)
+                    logger.warning(
+                        "Bedrock transient error, retrying",
+                        extra={
+                            "model": model,
+                            "error_code": error_code,
+                            "attempt": attempt,
+                            "retry_delay_s": round(delay, 2),
+                        },
+                    )
+                    time.sleep(delay)
+                    last_exc = exc
+                    continue
+                duration_ms = round((time.perf_counter() - start) * 1000)
+                logger.error(
+                    "Bedrock API error",
+                    extra={
+                        "model": model,
+                        "error_code": error_code,
+                        "duration_ms": duration_ms,
+                    },
+                    exc_info=True,
+                )
+                raise ProviderError(
+                    f"Bedrock API error [{error_code}]: {error_message}"
+                ) from exc
+
+        # Exhausted retries
+        raise ProviderError(
+            f"Bedrock API failed after {_MAX_RETRIES} retries"
+        ) from last_exc
