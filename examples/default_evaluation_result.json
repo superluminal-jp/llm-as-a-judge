@@ -1,33 +1,37 @@
 {
-  "_description": "default.json クライテリアを使った汎用評価の入出力サンプル。質問: 機械学習の初心者向け説明。7 軸すべてに evaluation_steps が定義されており、criterion_reasoning に各ステップの回答と最終判断が含まれる。",
-  "input_event": {
-    "prompt": "機械学習とは何ですか？初心者にもわかりやすく説明してください。",
-    "response": "機械学習（Machine Learning）とは、コンピュータがデータから自動的にパターンを学習し、明示的にプログラムされることなく予測や判断を行えるようにする人工知能（AI）の一分野です。\n\n従来のプログラミングでは、人間がすべてのルールをコードで記述する必要がありました。一方、機械学習ではコンピュータに大量のデータを与えることで、システムが自らルールを発見します。\n\n機械学習の代表的な種類には以下があります：\n\n1. **教師あり学習**: 正解ラベル付きのデータから学習する方法。スパムメール検出や画像分類などに利用されます。\n2. **教師なし学習**: ラベルなしデータからパターンや構造を発見する方法。顧客セグメンテーションなどに使われます。\n3. **強化学習**: 試行錯誤を通じて最適な行動を学習する方法。ゲームAIや自律ロボットに応用されます。\n\n日常生活では、Netflix の映画推薦、Google の検索ランキング、スマートフォンの顔認証など、多くの場面で機械学習が活用されています。",
-    "provider": "anthropic",
-    "judge_model": "claude-sonnet-4-6",
-    "criteria_file": "s3://example-bucket/criteria/default.json"
+  "_meta": {
+    "description": "default.json クライテリアを使った実際の評価結果サンプル。7 軸すべてに evaluation_steps が定義されており、criterion_reasoning に各ステップの回答と最終判断が含まれる。",
+    "command": "python -m src.cli --provider bedrock --prompt '機械学習とは何ですか？' --response '機械学習はデータからパターンを学習する技術です。' --criteria criteria/default.json",
+    "note": "短い一文回答を意図的に使用。completeness・helpfulness が低スコアになることで、evaluation_steps による多角的評価が機能していることを確認できる。"
   },
-  "output_response": {
+  "input": {
+    "prompt": "機械学習とは何ですか？",
+    "response": "機械学習はデータからパターンを学習する技術です。",
+    "provider": "bedrock",
+    "judge_model": "jp.anthropic.claude-sonnet-4-6",
+    "criteria_file": "criteria/default.json"
+  },
+  "output": {
     "criterion_scores": {
-      "accuracy": 5.0,
-      "completeness": 4.5,
-      "relevance": 5.0,
-      "clarity": 4.5,
-      "helpfulness": 4.5,
-      "coherence": 5.0,
-      "appropriateness": 4.0
+      "accuracy": 4.0,
+      "completeness": 2.0,
+      "relevance": 4.0,
+      "clarity": 3.0,
+      "helpfulness": 2.0,
+      "coherence": 4.0,
+      "appropriateness": 3.0
     },
     "criterion_reasoning": {
-      "accuracy": "Step 1: Yes, all factual claims are verifiable and supported — 教師あり/教師なし/強化学習の定義はいずれも確立された概念と一致している。\nStep 2: No contradictions found — 回答全体を通じて内容に矛盾はない。\nStep 3: No speculation presented as fact — 「日常生活での活用例」はいずれも広く知られた事実であり、推測として提示された内容はない。\n\nFinal: 機械学習の定義・分類・活用例のすべてにわたって事実的正確性は非常に高い。スコア 5。",
-      "completeness": "Step 1: Most aspects addressed — 定義・分類・具体例の 3 つの主要側面すべてに言及している。\nStep 2: Minor omissions present — ディープラーニングや近年の生成 AI との関係についての説明がなく、初心者が疑問に思う可能性がある。\nStep 3: Depth is appropriate for key topics — 各分類の説明は初心者向けとして適切な深さ。\n\nFinal: 主要な観点は十分に網羅されているが、ディープラーニングや近年のトレンドへの言及がない点でやや不足。スコア 4.5。",
-      "relevance": "Step 1: Yes, the response directly addresses the question — 「機械学習とは何か」という問いに対し、定義から始まり分類・具体例まで順序立てて説明している。\nStep 2: No significant tangents — 脱線はなく、すべての内容が質問に直結している。\nStep 3: Scope matches the question — 「初心者向け」という条件に合わせた適切な範囲。\n\nFinal: 質問への適合度は非常に高く、すべての内容が回答として直接的に機能している。スコア 5。",
-      "clarity": "Step 1: Yes, logical structure is clear — 定義→従来比較→分類→具体例という流れが明快。\nStep 2: No ambiguous statements — 専門用語（qubit 等）の使用はなく、すべての概念が平易に説明されている。\nStep 3: Complexity is appropriate — 箇条書きと太字の活用により読みやすく整理されている。文の長さもおおむね適切。\n\nFinal: 構造が明快で読みやすい。箇条書きの活用が視認性を高めている。段落構成が若干長めな箇所があるが全体的に非常に明瞭。スコア 4.5。",
-      "helpfulness": "Step 1: Yes, actionable information provided — 具体的な活用例（Netflix・Google・顔認証）により、読者が機械学習を身近なものとして理解できる。\nStep 2: Common follow-up questions partially addressed — 「どう学び始めるか」「何が必要か」といった初心者の次の疑問には対応していない。\nStep 3: Well-calibrated to audience level — 「初心者向け」という指定に対して技術的すぎず、かつ表面的すぎない適切なレベル感。\n\nFinal: 初心者が概念を理解するための情報は十分に提供されているが、学習開始への具体的な案内がないため、有用性としてはもう一歩踏み込む余地がある。スコア 4.5。",
-      "coherence": "Step 1: Ideas connect logically from one to the next — 定義→従来との違い→分類→日常例という構成は自然な論理的流れに沿っている。\nStep 2: No contradictions — 前後で主張が一貫しており、矛盾はない。\nStep 3: Consistent perspective throughout — 「初心者への説明」という一貫した視点が最初から最後まで維持されている。\n\nFinal: 回答全体の論理的な一貫性は非常に高く、各段落が次の内容への橋渡しとして機能している。スコア 5。",
-      "appropriateness": "Step 1: Tone is mostly formal — 全体的に丁寧な文体だが、若干カジュアルな表現も混在している。\nStep 2: Does not fully meet scholarly standards — 情報源の引用がなく、学術的文脈では参照文献の明示が求められる場合がある。\nStep 3: Style suitable for informational writing — 学術論文よりは解説記事・教材に近いスタイル。学術目的としては若干不足。\n\nFinal: 一般的な解説や教育目的には十分に適切だが、学術的文脈（論文・研究レポート等）としては文献引用や厳密な定義の欠如が課題。スコア 4。"
+      "accuracy": "Step 1: The claim that machine learning is a technology that learns patterns from data is verifiable and well-supported. This is a widely accepted definition in the field, consistent with academic and industry sources.\nStep 2: The response is a single concise sentence with no contradictions or internal inconsistencies.\nStep 3: The response states an established fact about machine learning rather than speculation or opinion.\n\nFinal: The response accurately describes machine learning as a technology that learns patterns from data, which is factually correct and consistent with standard definitions. However, it is very brief and could be considered incomplete (missing nuances like model training, generalization, supervised/unsupervised learning, etc.), though what is stated is accurate. No factual errors are present, warranting a score of 4.",
+      "completeness": "Step 1: The response addresses the core concept of machine learning (learning patterns from data), but does not cover other important aspects such as types of machine learning (supervised, unsupervised, reinforcement learning), how it works, applications, or examples.\nStep 2: There are significant omissions: no explanation of how machine learning differs from traditional programming, no mention of algorithms or models, no examples of applications, no discussion of training/testing processes, and no mention of key subcategories or use cases. These omissions substantially reduce the usefulness of the answer.\nStep 3: The depth of coverage is very shallow — only a single sentence is provided. While the sentence is accurate, it barely scratches the surface of what machine learning is. An adequate answer to 'What is machine learning?' would typically include definition, key concepts, types, and examples.\n\nFinal: The response provides a minimally accurate but extremely brief definition of machine learning. It captures one core idea (learning patterns from data) but omits nearly all important aspects including types of ML, how it works, practical examples, key algorithms, and how it differs from rule-based programming. The single-sentence answer covers only a fraction of what would be needed to thoroughly address the question.",
+      "relevance": "Step 1: Yes, the response directly addresses the question 'What is machine learning?' by providing a definition that machine learning is a technology that learns patterns from data.\nStep 2: There are no tangents or off-topic sections. The response is brief and focused entirely on answering the question.\nStep 3: The scope is appropriately matched — the question asks for a definition/explanation, and the response provides a concise definition. However, it is quite brief and could be considered minimally sufficient.\n\nFinal: The response directly and accurately addresses the question about what machine learning is, with no off-topic content. It stays perfectly on topic. The only reason it doesn't score a 5 is that while it is relevant, it is very brief and could be considered somewhat incomplete as an explanation (e.g., missing examples, types, or applications), but in terms of relevance specifically, it is highly on-topic.",
+      "clarity": "Step 1: The response is a single sentence, so there is minimal structure to evaluate. It presents one idea directly without any logical flow beyond a simple definition.\nStep 2: The statement '機械学習はデータからパターンを学習する技術' is straightforward and uses no unexplained jargon. However, terms like 'パターン' (patterns) and '学習' (learning) could benefit from slight elaboration for a complete beginner.\nStep 3: The sentence is appropriately concise, but it may be too terse — it provides a bare minimum definition without any supporting detail, example, or context that would aid comprehension.\n\nFinal: The response is clear and grammatically correct, with no confusing jargon. However, it is extremely brief — a single sentence that offers only a surface-level definition. While it is not unclear, the terseness limits full understanding, and a slightly more developed explanation would elevate clarity significantly. It scores as 'generally clear with minor unclear points' due to the lack of elaboration.",
+      "helpfulness": "Step 1: The response does not provide any actionable information or concrete next steps. It only gives a single-sentence definition without explaining how to use, apply, or learn more about machine learning.\nStep 2: The response does not anticipate or address likely follow-up questions such as 'How does it work?', 'What are examples?', 'What are the types of machine learning?', or 'How is it used in practice?'\nStep 3: The response is extremely brief and does not assess the reader's level of expertise. A beginner would need more explanation, while an expert might want more nuanced details — neither is served well by this one-line answer.\n\nFinal: The response provides a technically accurate but extremely minimal definition of machine learning. It offers virtually no practical value beyond a single sentence, failing to provide actionable insights, examples, context, or answers to likely follow-up questions. While it is not misleading, its limited depth makes it only marginally helpful for someone genuinely seeking to understand machine learning.",
+      "coherence": "Step 1: The response is a single sentence, so there is no multi-step logical flow to evaluate. The one idea presented is internally consistent: machine learning is described as a technique that learns patterns from data, which is a coherent statement.\nStep 2: There are no contradictions in the response. It makes one simple claim with no follow-up statements that could undermine it.\nStep 3: The response maintains a consistent perspective throughout, as it is a single, unified sentence with no shifts in argument or perspective.\n\nFinal: The response is a single, concise sentence that is logically consistent and coherent. There are no contradictions or inconsistencies. However, because it is so brief, there is minimal logical structure or flow to evaluate beyond the basic coherence of the single claim. It earns a 4 rather than a 5 because the brevity limits the demonstration of excellent logical flow or well-structured argumentation.",
+      "appropriateness": "Step 1: The tone is neutral and factual, free of colloquialisms or casual language. It is concise and uses appropriate terminology ('データからパターンを学習する技術'), which is formal enough for basic academic use.\nStep 2: The content is a very brief, one-sentence definition. While accurate, it lacks the depth, nuance, or scholarly framing expected in an academic context. There are no citations, no elaboration on mechanisms, applications, or theoretical underpinnings, and no objective framing beyond a minimal statement.\nStep 3: The style is simple and direct, which is not inherently problematic, but it falls short of academic discourse standards. Academic writing typically requires more elaboration, context, and structured argumentation. This response reads more like a casual dictionary definition than a scholarly explanation.\n\nFinal: The response is tonally neutral and uses appropriate terminology, avoiding casual or colloquial language. However, it is extremely brief and lacks the depth, structure, and scholarly framing expected in an academic context. It provides no elaboration on methodology, theoretical basis, or applications, and offers no citations or references. While not inappropriate, it is too minimal to be considered well-suited for academic discourse, earning a score of 3 — generally appropriate but insufficient for academic standards."
     },
-    "reasoning": "総評: 各クライテリアの評価結果は以下のとおりである。accuracy 5.0, completeness 4.5, relevance 5.0, clarity 4.5, helpfulness 4.5, coherence 5.0, appropriateness 4.0。各観点は独立した意味を持つため総合スコアは算出していない。",
-    "judge_model": "claude-sonnet-4-6",
-    "provider": "anthropic"
+    "reasoning": "総評: 各クライテリアの評価結果は以下のとおりである。accuracy 4.0, completeness 2.0, relevance 4.0, clarity 3.0, helpfulness 2.0, coherence 4.0, appropriateness 3.0。各観点は独立した意味を持つため総合スコアは算出していない。",
+    "judge_model": "jp.anthropic.claude-sonnet-4-6",
+    "provider": "bedrock"
   }
 }
