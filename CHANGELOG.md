@@ -8,12 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
-- `src/cli.py`: CLI entry point for local evaluation (`python -m src.cli`) — accepts `--prompt`, `--response`, `--provider`, `--model`, `--criteria` (local file path), `--timeout`, `--indent`
+- `src/cli.py`: CLI entry point for local evaluation (`python -m src.cli`) — accepts `--prompt`, `--response`, `--provider`, `--model`, `--criteria` (local file path), `--timeout`, `--indent` (`python -m src.cli`) — accepts `--prompt`, `--response`, `--provider`, `--model`, `--criteria` (local file path), `--timeout`, `--indent`
 - `src/criteria.py`: `load_from_file(path)` — loads criteria from a local JSON file; raises `CriteriaLoadError` for missing/invalid files
 - `evaluation_steps` field on `CriterionDefinition` — ordered list of yes/no questions the judge LLM works through before scoring
 - `criterion_reasoning` field in Lambda response — per-criterion reasoning text (includes numbered step answers when `evaluation_steps` defined)
 - `examples/` directory with I/O samples for `default.json` and `disclosure_evaluation_criteria.json` criteria
 - `criteria/disclosure_evaluation_criteria.json` — 情報公開法第 5 条第 1〜6 号の不開示事由評価基準（6 クライテリア、段階的推論付き）
+
+### Fixed
+
+- `BEDROCK_MODEL` default changed from `anthropic.claude-sonnet-4-6` to `amazon.nova-lite-v1:0` — Claude models require a cross-region inference profile ARN in ap-northeast-1 and cannot be invoked with on-demand throughput directly
 
 ### Changed
 

@@ -18,7 +18,10 @@ Environment Variables:
                          Defaults to ``"gpt-4o"``.
     BEDROCK_MODEL:       Judge model for Bedrock (no API key required; Lambda
                          execution role provides IAM access).
-                         Defaults to ``"anthropic.claude-sonnet-4-6"``.
+                         Defaults to ``"amazon.nova-lite-v1:0"`` (on-demand
+                         throughput available in ap-northeast-1). For Claude
+                         models use a cross-region inference profile ARN, e.g.
+                         ``ap.anthropic.claude-3-5-sonnet-20241022-v2:0``.
     REQUEST_TIMEOUT:     HTTP request timeout in seconds (integer).
                          Defaults to ``30``.
     LOG_LEVEL:           Powertools log level (``DEBUG``, ``INFO``, …).
@@ -115,7 +118,7 @@ def _load_config() -> Config:
         anthropic_model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
         openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
         openai_model=os.environ.get("OPENAI_MODEL", "gpt-4o"),
-        bedrock_model=os.environ.get("BEDROCK_MODEL", "anthropic.claude-sonnet-4-6"),
+        bedrock_model=os.environ.get("BEDROCK_MODEL", "amazon.nova-lite-v1:0"),
         request_timeout=request_timeout,
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
     )
