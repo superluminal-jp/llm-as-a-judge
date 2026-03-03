@@ -81,7 +81,7 @@ class LlmJudgeStack(cdk.Stack):
     Context keys:
         default_provider (str):     LLM provider used when the Lambda event
                                     does not specify one. Defaults to
-                                    ``"anthropic"``.
+                                    ``"bedrock"``.
         criteria_bucket_arn (str):  ARN of the S3 bucket that stores criteria
                                     JSON files. When provided, an
                                     ``s3:GetObject`` policy is attached to the
@@ -106,7 +106,7 @@ class LlmJudgeStack(cdk.Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         # Read CDK context values; fall back to safe defaults.
-        default_provider: str = self.node.try_get_context("default_provider") or "anthropic"
+        default_provider: str = self.node.try_get_context("default_provider") or "bedrock"
         criteria_bucket_arn: str = self.node.try_get_context("criteria_bucket_arn") or ""
 
         # -----------------------------------------------------------------
@@ -150,9 +150,8 @@ class LlmJudgeStack(cdk.Stack):
                 # Do NOT hard-code keys here.
                 "ANTHROPIC_MODEL": "claude-sonnet-4-6",
                 "OPENAI_MODEL": "gpt-4o",
-                # nova-premier is only available in us-east-1; nova-lite is
-                # available in all regions including ap-northeast-1.
-                "BEDROCK_MODEL": "amazon.nova-lite-v1:0",
+                # Claude Sonnet 4.6 on Bedrock (anthropic.claude-sonnet-4-6).
+                "BEDROCK_MODEL": "anthropic.claude-sonnet-4-6",
                 "REQUEST_TIMEOUT": "30",
             },
             description=(

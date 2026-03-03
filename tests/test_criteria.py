@@ -4,7 +4,6 @@ Covers:
 - load_from_dict: valid input, missing 'criteria' key, invalid criterion data.
 - load_from_s3: successful load via moto, NoSuchKey error, invalid JSON.
 - _parse_s3_uri: valid URI, invalid URI patterns.
-- EvaluationCriteria weight normalisation.
 - DefaultCriteria.balanced() sanity checks.
 """
 
@@ -38,12 +37,10 @@ VALID_CRITERIA_DICT = {
         {
             "name": "accuracy",
             "description": "Factual correctness of the response.",
-            "weight": 0.5,
         },
         {
             "name": "clarity",
             "description": "Clarity and readability.",
-            "weight": 0.5,
         },
     ],
 }
@@ -102,15 +99,7 @@ class TestLoadFromDict:
         with pytest.raises(ValidationError):
             load_from_dict({"criteria": [{"description": "No name."}]})
 
-    def test_load_from_dict_default_weight_applied(self):
-        """Criterion without 'weight' defaults to 1.0."""
-        data = {
-            "criteria": [{"name": "accuracy", "description": "Correct?"}]
-        }
-        ec = load_from_dict(data)
-        assert ec.criteria[0].weight == 1.0
-
-    def test_load_from_dict_uses_evaluation_prompt_and_examples(self):
+    def test_load_from_dict_uses_evaluation_prompt_and_score_descriptors(self):
         """Optional fields are populated when provided."""
         data = {
             "criteria": [
@@ -118,13 +107,36 @@ class TestLoadFromDict:
                     "name": "accuracy",
                     "description": "Correct?",
                     "evaluation_prompt": "Check facts.",
-                    "examples": {"1": "Wrong", "5": "Correct"},
+                    "score_descriptors": {"1": "Wrong", "5": "Correct"},
                 }
             ]
         }
         ec = load_from_dict(data)
         assert ec.criteria[0].evaluation_prompt == "Check facts."
-        assert ec.criteria[0].examples == {"1": "Wrong", "5": "Correct"}
+        assert ec.criteria[0].score_descriptors == {"1": "Wrong", "5": "Correct"}
+
+    def test_load_from_dict_uses_evaluation_steps(self):
+        """evaluation_steps list is populated when provided."""
+        data = {
+            "criteria": [
+                {
+                    "name": "accuracy",
+                    "description": "Correct?",
+                    "evaluation_steps": ["Is claim A verifiable?", "Are there contradictions?"],
+                }
+            ]
+        }
+        ec = load_from_dict(data)
+        assert ec.criteria[0].evaluation_steps == [
+            "Is claim A verifiable?",
+            "Are there contradictions?",
+        ]
+
+    def test_load_from_dict_evaluation_steps_defaults_to_empty(self):
+        """evaluation_steps defaults to [] when absent."""
+        ec = load_from_dict(VALID_CRITERIA_DICT)
+        for criterion in ec.criteria:
+            assert criterion.evaluation_steps == []
 
 
 # ---------------------------------------------------------------------------
@@ -187,37 +199,6 @@ class TestParseS3Uri:
 
 
 # ---------------------------------------------------------------------------
-# EvaluationCriteria weight normalisation
-# ---------------------------------------------------------------------------
-
-
-class TestEvaluationCriteriaWeights:
-    def test_normalised_weights_sum_to_one(self):
-        ec = EvaluationCriteria(
-            criteria=[
-                CriterionDefinition(name="a", description="A", weight=3.0),
-                CriterionDefinition(name="b", description="B", weight=1.0),
-            ]
-        )
-        weights = ec.normalised_weights
-        assert sum(weights.values()) == pytest.approx(1.0)
-        assert weights["a"] == pytest.approx(0.75)
-        assert weights["b"] == pytest.approx(0.25)
-
-    def test_equal_weights_each_is_one_over_n(self):
-        ec = EvaluationCriteria(
-            criteria=[
-                CriterionDefinition(name="x", description="X"),
-                CriterionDefinition(name="y", description="Y"),
-                CriterionDefinition(name="z", description="Z"),
-            ]
-        )
-        weights = ec.normalised_weights
-        for w in weights.values():
-            assert w == pytest.approx(1 / 3)
-
-
-# ---------------------------------------------------------------------------
 # DefaultCriteria
 # ---------------------------------------------------------------------------
 
@@ -231,7 +212,3 @@ class TestDefaultCriteria:
         ec = DefaultCriteria.balanced()
         names = {c.name for c in ec.criteria}
         assert names == {"accuracy", "clarity", "helpfulness", "completeness"}
-
-    def test_balanced_weights_normalise_to_one(self):
-        ec = DefaultCriteria.balanced()
-        assert sum(ec.normalised_weights.values()) == pytest.approx(1.0)

@@ -33,7 +33,7 @@
 | `scale_min` | `int` | — | `1` | スコア最小値 |
 | `scale_max` | `int` | — | `5` | スコア最大値 |
 | `evaluation_prompt` | `str` | — | `""` | LLM へのガイダンス |
-| `examples` | `dict[int, str]` | — | `{}` | スコア → 例 |
+| `score_descriptors` | `dict[str, str]` | — | `{}` | スコア → デスクリプタ |
 
 **バリデーションルール:**
 - `weight > 0`
@@ -141,7 +141,7 @@ EvaluationResult (dict)
       "description": "string (required)",
       "weight": 1.0,
       "evaluation_prompt": "string (optional)",
-      "examples": {
+      "score_descriptors": {
         "1": "string",
         "5": "string"
       }

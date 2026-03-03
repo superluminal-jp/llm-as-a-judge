@@ -13,6 +13,8 @@ Modules:
     providers: BaseProvider protocol, per-provider implementations, factory.
 """
 
+import time
+
 from aws_lambda_powertools import Logger
 from aws_lambda_powertools.utilities.typing import LambdaContext
 
@@ -22,6 +24,9 @@ from src.evaluator import evaluate
 from src.providers import get_provider
 
 logger = Logger(service="llm-judge")
+
+# Threshold in seconds above which handler duration is logged at INFO.
+_DURATION_LOG_THRESHOLD_SEC = 0.1
 
 
 # ---------------------------------------------------------------------------
@@ -121,55 +126,114 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
         ProviderError: LLM API call failed.
         CriteriaLoadError: S3 criteria file not accessible or invalid JSON.
     """
-    _validate_event(event)
+    start_time = time.perf_counter()
+    request_id = getattr(context, "aws_request_id", None)
 
-    config = get_config()
+    try:
+        _validate_event(event)
 
-    # Resolve provider and model — event fields override env-var defaults.
-    provider_name: str = event.get("provider") or config.default_provider
-    judge_model: str = event.get("judge_model") or _default_model(config, provider_name)
+        config = get_config()
 
-    validate_for_provider(config, provider_name)
+        # Resolve provider and model — event fields override env-var defaults.
+        provider_name: str = event.get("provider") or config.default_provider
+        judge_model: str = event.get("judge_model") or _default_model(
+            config, provider_name
+        )
 
-    # Load evaluation criteria.
-    criteria_file: str | None = event.get("criteria_file")
-    if criteria_file:
-        logger.info("Loading criteria from S3", extra={"criteria_file": criteria_file})
-        criteria = load_from_s3(criteria_file)
-    else:
-        criteria = DefaultCriteria.balanced()
+        validate_for_provider(config, provider_name)
 
-    provider = get_provider(provider_name, config)
+        # Load evaluation criteria.
+        criteria_file: str | None = event.get("criteria_file")
+        if criteria_file:
+            logger.info(
+                "Loading criteria from S3",
+                extra={"criteria_file": criteria_file, "request_id": request_id},
+            )
+            criteria = load_from_s3(criteria_file)
+        else:
+            criteria = DefaultCriteria.balanced()
 
-    logger.info(
-        "Starting evaluation",
-        extra={
-            "provider": provider_name,
-            "model": judge_model,
-            "criteria_count": len(criteria.criteria),
-        },
-    )
+        provider = get_provider(provider_name, config)
 
-    result = evaluate(
-        prompt=event["prompt"],
-        response=event["response"],
-        criteria=criteria,
-        provider=provider,
-        model=judge_model,
-        timeout=config.request_timeout,
-        provider_name=provider_name,
-    )
+        logger.info(
+            "Starting evaluation",
+            extra={
+                "provider": provider_name,
+                "model": judge_model,
+                "criteria_count": len(criteria.criteria),
+                "request_id": request_id,
+            },
+        )
 
-    logger.info(
-        "Evaluation completed",
-        extra={
-            "overall_score": result["overall_score"],
+        result = evaluate(
+            prompt=event["prompt"],
+            response=event["response"],
+            criteria=criteria,
+            provider=provider,
+            model=judge_model,
+            timeout=config.request_timeout,
+            provider_name=provider_name,
+        )
+
+        duration_sec = time.perf_counter() - start_time
+        duration_ms = round(duration_sec * 1000)
+        log_extra = {
             "provider": result["provider"],
             "model": result["judge_model"],
-        },
-    )
+            "duration_ms": duration_ms,
+            "request_id": request_id,
+        }
+        if "overall_score" in result:
+            log_extra["overall_score"] = result["overall_score"]
 
-    return result
+        if duration_sec >= _DURATION_LOG_THRESHOLD_SEC:
+            logger.info("Evaluation completed", extra=log_extra)
+        else:
+            logger.debug("Evaluation completed", extra=log_extra)
+
+        return result
+
+    except (ValidationError, ConfigurationError, ProviderError, CriteriaLoadError) as exc:
+        duration_ms = round((time.perf_counter() - start_time) * 1000)
+        logger.error(
+            "Evaluation failed",
+            extra={
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+                "request_id": request_id,
+                "duration_ms": duration_ms,
+            },
+            exc_info=True,
+        )
+        raise
+
+    except LlmJudgeError as exc:
+        duration_ms = round((time.perf_counter() - start_time) * 1000)
+        logger.error(
+            "Evaluation failed (unknown LlmJudgeError)",
+            extra={
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+                "request_id": request_id,
+                "duration_ms": duration_ms,
+            },
+            exc_info=True,
+        )
+        raise
+
+    except Exception as exc:
+        duration_ms = round((time.perf_counter() - start_time) * 1000)
+        logger.critical(
+            "Unexpected error in Lambda handler",
+            extra={
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+                "request_id": request_id,
+                "duration_ms": duration_ms,
+            },
+            exc_info=True,
+        )
+        raise
 
 
 # ---------------------------------------------------------------------------

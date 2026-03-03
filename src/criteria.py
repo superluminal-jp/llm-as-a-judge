@@ -1,8 +1,8 @@
 """Evaluation criteria data structures and loaders for LLM-as-a-Judge.
 
 Provides immutable dataclasses for defining multi-criteria evaluation rubrics,
-weight normalisation logic, a factory for the default balanced criteria set,
-and utilities for loading criteria from S3 or plain dicts.
+a factory for the default balanced criteria set, and utilities for loading
+criteria from S3 or plain dicts.
 
 S3 loading uses a module-level boto3 client cached per Lambda container to
 avoid re-establishing the connection on every invocation.
@@ -44,24 +44,26 @@ class CriterionDefinition:
     Attributes:
         name:              Unique identifier (alphanumeric + underscore).
         description:       Human-readable explanation of what is measured.
-        weight:            Relative importance; auto-normalised to sum to 1.0
-                           across all criteria in an :class:`EvaluationCriteria`.
         evaluation_prompt: Optional additional guidance for the judge LLM.
-        examples:          Optional mapping of score value → example text.
+        score_descriptors: Optional mapping of score value → descriptor text.
+        evaluation_steps:  Optional ordered list of yes/no questions or checks
+                           the judge LLM must work through before scoring.
+                           When present, the LLM returns per-step reasoning
+                           alongside the final score.
     """
 
     name: str
     description: str
-    weight: float = 1.0
     evaluation_prompt: str = ""
-    examples: dict[str, str] = field(default_factory=dict)
+    score_descriptors: dict[str, str] = field(default_factory=dict)
+    evaluation_steps: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Validate fields after dataclass initialisation.
 
         Raises:
-            ValueError: If ``name`` is empty, contains invalid characters,
-                or ``weight`` is not a positive number.
+            ValueError: If ``name`` is empty or contains invalid characters,
+                or ``description`` is empty.
         """
         if not self.name or not re.match(r"^[a-zA-Z0-9_]+$", self.name):
             raise ValueError(
@@ -70,43 +72,28 @@ class CriterionDefinition:
             )
         if not self.description:
             raise ValueError("Criterion description must not be empty.")
-        if self.weight <= 0:
-            raise ValueError(
-                f"Criterion weight must be positive; got {self.weight!r}."
-            )
 
 
 @dataclass(frozen=True)
 class EvaluationCriteria:
-    """A collection of evaluation criteria with normalised weights.
+    """A collection of evaluation criteria.
 
     Attributes:
-        criteria:          Ordered list of :class:`CriterionDefinition` items.
-        name:              Human-readable label for this criteria set.
-        _weights_normalised: Precomputed normalised weight per criterion name.
+        criteria: Ordered list of :class:`CriterionDefinition` items.
+        name:     Human-readable label for this criteria set.
     """
 
     criteria: list[CriterionDefinition]
     name: str = "Evaluation Criteria"
 
     def __post_init__(self) -> None:
-        """Validate and normalise criterion weights.
+        """Validate criteria list.
 
         Raises:
             ValueError: If ``criteria`` is empty.
         """
         if not self.criteria:
             raise ValueError("EvaluationCriteria must contain at least one criterion.")
-
-    @property
-    def normalised_weights(self) -> dict[str, float]:
-        """Return a mapping of criterion name → normalised weight (sum = 1.0).
-
-        Returns:
-            Dict keyed by criterion name with float weight values that sum to 1.0.
-        """
-        total = sum(c.weight for c in self.criteria)
-        return {c.name: c.weight / total for c in self.criteria}
 
 
 # ---------------------------------------------------------------------------
@@ -121,12 +108,12 @@ class DefaultCriteria:
     def balanced() -> EvaluationCriteria:
         """Return a general-purpose balanced criteria set.
 
-        Includes four equally weighted dimensions suitable for most evaluation
-        tasks when no custom criteria file is specified.
+        Includes four dimensions suitable for most evaluation tasks when
+        no custom criteria file is specified.
 
         Returns:
             :class:`EvaluationCriteria` with accuracy, clarity, helpfulness,
-            and completeness criteria (equal weight 1.0 each).
+            and completeness criteria.
         """
         return EvaluationCriteria(
             name="Balanced Evaluation",
@@ -134,7 +121,6 @@ class DefaultCriteria:
                 CriterionDefinition(
                     name="accuracy",
                     description="Factual correctness of the response.",
-                    weight=1.0,
                     evaluation_prompt=(
                         "Verify whether all claims are factually correct. "
                         "Penalise hallucinations or contradictions."
@@ -143,7 +129,6 @@ class DefaultCriteria:
                 CriterionDefinition(
                     name="clarity",
                     description="Clarity and readability of the explanation.",
-                    weight=1.0,
                     evaluation_prompt=(
                         "Assess whether the response is easy to follow, "
                         "well-structured, and free of ambiguous language."
@@ -152,7 +137,6 @@ class DefaultCriteria:
                 CriterionDefinition(
                     name="helpfulness",
                     description="Practical usefulness of the response to the user.",
-                    weight=1.0,
                     evaluation_prompt=(
                         "Consider whether the response directly addresses the "
                         "user's need and provides actionable information."
@@ -161,7 +145,6 @@ class DefaultCriteria:
                 CriterionDefinition(
                     name="completeness",
                     description="Coverage of all relevant aspects of the question.",
-                    weight=1.0,
                     evaluation_prompt=(
                         "Check whether important aspects of the question are "
                         "addressed without unnecessary omission."
@@ -193,12 +176,23 @@ def load_from_dict(data: dict[str, Any]) -> EvaluationCriteria:
     from src.handler import ValidationError
 
     if "criteria" not in data:
+        logger.warning(
+            "Criteria dict validation failed: missing 'criteria' key",
+            extra={"keys_present": list(data.keys())},
+        )
         raise ValidationError(
             "Criteria file is missing the required 'criteria' key."
         )
 
     raw_criteria = data["criteria"]
     if not isinstance(raw_criteria, list) or len(raw_criteria) == 0:
+        logger.warning(
+            "Criteria dict validation failed: 'criteria' not a non-empty array",
+            extra={
+                "type": type(raw_criteria).__name__,
+                "length": len(raw_criteria) if isinstance(raw_criteria, list) else None,
+            },
+        )
         raise ValidationError(
             "'criteria' must be a non-empty array."
         )
@@ -208,13 +202,17 @@ def load_from_dict(data: dict[str, Any]) -> EvaluationCriteria:
             CriterionDefinition(
                 name=c["name"],
                 description=c["description"],
-                weight=float(c.get("weight", 1.0)),
                 evaluation_prompt=c.get("evaluation_prompt", ""),
-                examples=c.get("examples", {}),
+                score_descriptors=c.get("score_descriptors", {}),
+                evaluation_steps=c.get("evaluation_steps", []),
             )
             for c in raw_criteria
         ]
     except (KeyError, ValueError, TypeError) as exc:
+        logger.warning(
+            "Criteria dict validation failed: invalid criterion definition",
+            extra={"error_type": type(exc).__name__, "error": str(exc)},
+        )
         raise ValidationError(
             f"Invalid criterion definition: {exc}"
         ) from exc

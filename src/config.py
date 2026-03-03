@@ -7,7 +7,7 @@ Lambda container.
 Environment Variables:
     DEFAULT_PROVIDER:    LLM provider used when the event does not specify one.
                          One of ``anthropic``, ``openai``, or ``bedrock``.
-                         Defaults to ``"anthropic"``.
+                         Defaults to ``"bedrock"``.
     ANTHROPIC_API_KEY:   API key for Anthropic. Required when provider is
                          ``"anthropic"``.
     ANTHROPIC_MODEL:     Judge model for Anthropic.
@@ -18,7 +18,7 @@ Environment Variables:
                          Defaults to ``"gpt-4o"``.
     BEDROCK_MODEL:       Judge model for Bedrock (no API key required; Lambda
                          execution role provides IAM access).
-                         Defaults to ``"amazon.nova-premier-v1:0"``.
+                         Defaults to ``"anthropic.claude-sonnet-4-6"``.
     REQUEST_TIMEOUT:     HTTP request timeout in seconds (integer).
                          Defaults to ``30``.
     LOG_LEVEL:           Powertools log level (``DEBUG``, ``INFO``, …).
@@ -110,12 +110,12 @@ def _load_config() -> Config:
         request_timeout = 30
 
     return Config(
-        default_provider=os.environ.get("DEFAULT_PROVIDER", "anthropic"),
+        default_provider=os.environ.get("DEFAULT_PROVIDER", "bedrock"),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         anthropic_model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
         openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
         openai_model=os.environ.get("OPENAI_MODEL", "gpt-4o"),
-        bedrock_model=os.environ.get("BEDROCK_MODEL", "amazon.nova-lite-v1:0"),
+        bedrock_model=os.environ.get("BEDROCK_MODEL", "anthropic.claude-sonnet-4-6"),
         request_timeout=request_timeout,
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
     )
@@ -145,11 +145,19 @@ def validate_for_provider(config: Config, provider: str) -> None:
     from src.handler import ConfigurationError
 
     if provider == "anthropic" and not config.anthropic_api_key:
+        logger.error(
+            "Provider validation failed: missing API key",
+            extra={"provider": provider, "missing_config": "ANTHROPIC_API_KEY"},
+        )
         raise ConfigurationError(
             "ANTHROPIC_API_KEY environment variable is not set. "
             "Configure it via AWS Secrets Manager or Lambda environment variables."
         )
     if provider == "openai" and not config.openai_api_key:
+        logger.error(
+            "Provider validation failed: missing API key",
+            extra={"provider": provider, "missing_config": "OPENAI_API_KEY"},
+        )
         raise ConfigurationError(
             "OPENAI_API_KEY environment variable is not set. "
             "Configure it via AWS Secrets Manager or Lambda environment variables."

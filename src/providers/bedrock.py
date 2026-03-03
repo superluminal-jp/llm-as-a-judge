@@ -10,6 +10,7 @@ with all Bedrock foundation models, including Amazon Nova and Anthropic Claude.
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 import boto3
@@ -76,24 +77,47 @@ class BedrockProvider:
             for msg in messages
         ]
 
+        start = time.perf_counter()
         try:
             response = self._client.converse(
                 modelId=model,
                 messages=bedrock_messages,
             )
             text: str = response["output"]["message"]["content"][0]["text"]
+            duration_ms = round((time.perf_counter() - start) * 1000)
             logger.debug(
                 "Bedrock converse call succeeded",
-                extra={"model": model, "response_length": len(text)},
+                extra={
+                    "model": model,
+                    "response_length": len(text),
+                    "duration_ms": duration_ms,
+                },
             )
             return text
 
+        except TimeoutError as exc:
+            duration_ms = round((time.perf_counter() - start) * 1000)
+            logger.error(
+                "Bedrock API request timed out",
+                extra={"model": model, "duration_ms": duration_ms},
+                exc_info=True,
+            )
+            raise ProviderError(
+                "Bedrock API request timed out. Retry or increase read_timeout in "
+                "botocore config."
+            ) from exc
+
         except botocore.exceptions.ClientError as exc:
+            duration_ms = round((time.perf_counter() - start) * 1000)
             error_code = exc.response["Error"]["Code"]
             error_message = exc.response["Error"]["Message"]
             logger.error(
                 "Bedrock API error",
-                extra={"model": model, "error_code": error_code},
+                extra={
+                    "model": model,
+                    "error_code": error_code,
+                    "duration_ms": duration_ms,
+                },
                 exc_info=True,
             )
             raise ProviderError(

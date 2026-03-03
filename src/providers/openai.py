@@ -10,6 +10,7 @@ network errors without additional wrappers.
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 import openai
@@ -68,6 +69,7 @@ class OpenAIProvider:
         """
         from src.handler import ProviderError
 
+        start = time.perf_counter()
         try:
             response = self._client.chat.completions.create(
                 model=model,
@@ -75,11 +77,27 @@ class OpenAIProvider:
                 timeout=timeout,
             )
             text: str = response.choices[0].message.content
+            duration_ms = round((time.perf_counter() - start) * 1000)
             logger.debug(
                 "OpenAI API call succeeded",
-                extra={"model": model, "response_length": len(text)},
+                extra={
+                    "model": model,
+                    "response_length": len(text),
+                    "duration_ms": duration_ms,
+                },
             )
             return text
+
+        except openai.APITimeoutError as exc:
+            duration_ms = round((time.perf_counter() - start) * 1000)
+            logger.error(
+                "OpenAI API request timed out",
+                extra={"model": model, "timeout_sec": timeout, "duration_ms": duration_ms},
+                exc_info=True,
+            )
+            raise ProviderError(
+                f"OpenAI API request timed out after {timeout}s. Retry or increase timeout."
+            ) from exc
 
         except openai.AuthenticationError as exc:
             logger.error(

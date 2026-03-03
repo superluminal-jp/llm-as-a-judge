@@ -10,6 +10,7 @@ network errors without additional retry wrappers.
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 import anthropic
@@ -68,6 +69,7 @@ class AnthropicProvider:
         """
         from src.handler import ProviderError
 
+        start = time.perf_counter()
         try:
             response = self._client.messages.create(
                 model=model,
@@ -76,11 +78,27 @@ class AnthropicProvider:
                 timeout=timeout,
             )
             text: str = response.content[0].text
+            duration_ms = round((time.perf_counter() - start) * 1000)
             logger.debug(
                 "Anthropic API call succeeded",
-                extra={"model": model, "response_length": len(text)},
+                extra={
+                    "model": model,
+                    "response_length": len(text),
+                    "duration_ms": duration_ms,
+                },
             )
             return text
+
+        except anthropic.APITimeoutError as exc:
+            duration_ms = round((time.perf_counter() - start) * 1000)
+            logger.error(
+                "Anthropic API request timed out",
+                extra={"model": model, "timeout_sec": timeout, "duration_ms": duration_ms},
+                exc_info=True,
+            )
+            raise ProviderError(
+                f"Anthropic API request timed out after {timeout}s. Retry or increase timeout."
+            ) from exc
 
         except anthropic.AuthenticationError as exc:
             logger.error(

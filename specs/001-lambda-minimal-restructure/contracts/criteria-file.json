@@ -27,24 +27,21 @@
             "minLength": 1,
             "description": "What this criterion measures"
           },
-          "weight": {
-            "type": "number",
-            "exclusiveMinimum": 0,
-            "description": "Relative weight (auto-normalized to sum to 1.0). Default: 1.0"
-          },
           "evaluation_prompt": {
             "type": "string",
             "description": "Additional guidance for the judge LLM on how to score this criterion"
           },
-          "examples": {
+          "score_descriptors": {
             "type": "object",
-            "description": "Score-to-example mapping for scoring guidance",
+            "description": "Score-to-descriptor mapping for scoring guidance",
             "additionalProperties": {
               "type": "string"
-            },
-            "examples": [
-              {"1": "Poor example", "3": "Average example", "5": "Excellent example"}
-            ]
+            }
+          },
+          "evaluation_steps": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Ordered list of yes/no questions or checks the judge LLM must work through before scoring. When present, the LLM returns per-step reasoning alongside the final score."
           }
         },
         "additionalProperties": false
@@ -59,17 +56,15 @@
         {
           "name": "accuracy",
           "description": "Factual correctness of the response",
-          "weight": 0.5,
           "evaluation_prompt": "Evaluate whether all technical claims are correct",
-          "examples": {
+          "score_descriptors": {
             "1": "Major factual errors",
             "5": "Completely accurate and verifiable"
           }
         },
         {
           "name": "clarity",
-          "description": "Clarity and readability of the explanation",
-          "weight": 0.5
+          "description": "Clarity and readability of the explanation"
         }
       ]
     }

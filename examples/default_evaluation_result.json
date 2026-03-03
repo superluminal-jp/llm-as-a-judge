@@ -1,0 +1,33 @@
+{
+  "_description": "default.json クライテリアを使った汎用評価の入出力サンプル。質問: 機械学習の初心者向け説明。7 軸すべてに evaluation_steps が定義されており、criterion_reasoning に各ステップの回答と最終判断が含まれる。",
+  "input_event": {
+    "prompt": "機械学習とは何ですか？初心者にもわかりやすく説明してください。",
+    "response": "機械学習（Machine Learning）とは、コンピュータがデータから自動的にパターンを学習し、明示的にプログラムされることなく予測や判断を行えるようにする人工知能（AI）の一分野です。\n\n従来のプログラミングでは、人間がすべてのルールをコードで記述する必要がありました。一方、機械学習ではコンピュータに大量のデータを与えることで、システムが自らルールを発見します。\n\n機械学習の代表的な種類には以下があります：\n\n1. **教師あり学習**: 正解ラベル付きのデータから学習する方法。スパムメール検出や画像分類などに利用されます。\n2. **教師なし学習**: ラベルなしデータからパターンや構造を発見する方法。顧客セグメンテーションなどに使われます。\n3. **強化学習**: 試行錯誤を通じて最適な行動を学習する方法。ゲームAIや自律ロボットに応用されます。\n\n日常生活では、Netflix の映画推薦、Google の検索ランキング、スマートフォンの顔認証など、多くの場面で機械学習が活用されています。",
+    "provider": "anthropic",
+    "judge_model": "claude-sonnet-4-6",
+    "criteria_file": "s3://example-bucket/criteria/default.json"
+  },
+  "output_response": {
+    "criterion_scores": {
+      "accuracy": 5.0,
+      "completeness": 4.5,
+      "relevance": 5.0,
+      "clarity": 4.5,
+      "helpfulness": 4.5,
+      "coherence": 5.0,
+      "appropriateness": 4.0
+    },
+    "criterion_reasoning": {
+      "accuracy": "Step 1: Yes, all factual claims are verifiable and supported — 教師あり/教師なし/強化学習の定義はいずれも確立された概念と一致している。\nStep 2: No contradictions found — 回答全体を通じて内容に矛盾はない。\nStep 3: No speculation presented as fact — 「日常生活での活用例」はいずれも広く知られた事実であり、推測として提示された内容はない。\n\nFinal: 機械学習の定義・分類・活用例のすべてにわたって事実的正確性は非常に高い。スコア 5。",
+      "completeness": "Step 1: Most aspects addressed — 定義・分類・具体例の 3 つの主要側面すべてに言及している。\nStep 2: Minor omissions present — ディープラーニングや近年の生成 AI との関係についての説明がなく、初心者が疑問に思う可能性がある。\nStep 3: Depth is appropriate for key topics — 各分類の説明は初心者向けとして適切な深さ。\n\nFinal: 主要な観点は十分に網羅されているが、ディープラーニングや近年のトレンドへの言及がない点でやや不足。スコア 4.5。",
+      "relevance": "Step 1: Yes, the response directly addresses the question — 「機械学習とは何か」という問いに対し、定義から始まり分類・具体例まで順序立てて説明している。\nStep 2: No significant tangents — 脱線はなく、すべての内容が質問に直結している。\nStep 3: Scope matches the question — 「初心者向け」という条件に合わせた適切な範囲。\n\nFinal: 質問への適合度は非常に高く、すべての内容が回答として直接的に機能している。スコア 5。",
+      "clarity": "Step 1: Yes, logical structure is clear — 定義→従来比較→分類→具体例という流れが明快。\nStep 2: No ambiguous statements — 専門用語（qubit 等）の使用はなく、すべての概念が平易に説明されている。\nStep 3: Complexity is appropriate — 箇条書きと太字の活用により読みやすく整理されている。文の長さもおおむね適切。\n\nFinal: 構造が明快で読みやすい。箇条書きの活用が視認性を高めている。段落構成が若干長めな箇所があるが全体的に非常に明瞭。スコア 4.5。",
+      "helpfulness": "Step 1: Yes, actionable information provided — 具体的な活用例（Netflix・Google・顔認証）により、読者が機械学習を身近なものとして理解できる。\nStep 2: Common follow-up questions partially addressed — 「どう学び始めるか」「何が必要か」といった初心者の次の疑問には対応していない。\nStep 3: Well-calibrated to audience level — 「初心者向け」という指定に対して技術的すぎず、かつ表面的すぎない適切なレベル感。\n\nFinal: 初心者が概念を理解するための情報は十分に提供されているが、学習開始への具体的な案内がないため、有用性としてはもう一歩踏み込む余地がある。スコア 4.5。",
+      "coherence": "Step 1: Ideas connect logically from one to the next — 定義→従来との違い→分類→日常例という構成は自然な論理的流れに沿っている。\nStep 2: No contradictions — 前後で主張が一貫しており、矛盾はない。\nStep 3: Consistent perspective throughout — 「初心者への説明」という一貫した視点が最初から最後まで維持されている。\n\nFinal: 回答全体の論理的な一貫性は非常に高く、各段落が次の内容への橋渡しとして機能している。スコア 5。",
+      "appropriateness": "Step 1: Tone is mostly formal — 全体的に丁寧な文体だが、若干カジュアルな表現も混在している。\nStep 2: Does not fully meet scholarly standards — 情報源の引用がなく、学術的文脈では参照文献の明示が求められる場合がある。\nStep 3: Style suitable for informational writing — 学術論文よりは解説記事・教材に近いスタイル。学術目的としては若干不足。\n\nFinal: 一般的な解説や教育目的には十分に適切だが、学術的文脈（論文・研究レポート等）としては文献引用や厳密な定義の欠如が課題。スコア 4。"
+    },
+    "reasoning": "総評: 各クライテリアの評価結果は以下のとおりである。accuracy 5.0, completeness 4.5, relevance 5.0, clarity 4.5, helpfulness 4.5, coherence 5.0, appropriateness 4.0。各観点は独立した意味を持つため総合スコアは算出していない。",
+    "judge_model": "claude-sonnet-4-6",
+    "provider": "anthropic"
+  }
+}

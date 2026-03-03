@@ -40,16 +40,19 @@ def _make_event(**kwargs) -> dict:
 
 
 def _valid_eval_result(provider: str = "anthropic", model: str = "claude-sonnet-4-6") -> dict:
-    """Return a minimal valid evaluation result dict (matches lambda-response schema)."""
+    """Return a minimal valid evaluation result dict (matches lambda-response schema).
+
+    Parallel-only evaluation returns criterion_scores and reasoning (総評);
+    no overall_score is computed.
+    """
     return {
-        "overall_score": 4.0,
         "criterion_scores": {
             "accuracy": 4.0,
             "clarity": 4.0,
             "helpfulness": 4.0,
             "completeness": 4.0,
         },
-        "reasoning": "Good response.",
+        "reasoning": "総評: 各クライテリアの評価結果は以下のとおりである。",
         "judge_model": model,
         "provider": provider,
     }
@@ -83,7 +86,6 @@ class TestBasicEvaluation:
 
             result = lambda_handler(sample_event, lambda_context)
 
-        assert result["overall_score"] == 4.0
         assert "criterion_scores" in result
         assert "reasoning" in result
         assert result["provider"] == "anthropic"
@@ -229,7 +231,6 @@ class TestMultiProviderSelection:
         self, sample_event, lambda_context, monkeypatch
     ):
         """Provider='bedrock' in event routes to Bedrock client."""
-        monkeypatch.setenv("BEDROCK_MODEL", "amazon.nova-premier-v1:0")
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
         import src.config as cfg_mod
@@ -237,7 +238,9 @@ class TestMultiProviderSelection:
         cfg_mod._config = None
 
         event = {**sample_event, "provider": "bedrock"}
-        expected = _valid_eval_result(provider="bedrock", model="amazon.nova-premier-v1:0")
+        expected = _valid_eval_result(
+            provider="bedrock", model="anthropic.claude-sonnet-4-6"
+        )
 
         with patch("src.handler.get_provider") as mock_get_provider, patch(
             "src.handler.evaluate", return_value=expected

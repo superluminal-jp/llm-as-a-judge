@@ -1,22 +1,25 @@
 """Tests for the evaluator module (src/evaluator.py).
 
 Covers:
-- Prompt construction includes all criterion names.
-- Valid JSON response is parsed into an evaluation result dict.
-- Invalid/missing JSON raises ProviderError.
-- Overall score is computed as a weighted average.
-- evaluate() orchestrates the full pipeline correctly.
+- Single-criterion prompt construction.
+- Single-criterion response parsing (score + reasoning).
+- evaluate() runs one LLM call per criterion in parallel and returns
+  criterion_scores and 総評 reasoning (no overall_score).
 """
 
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from src.criteria import CriterionDefinition, DefaultCriteria, EvaluationCriteria
-from src.evaluator import build_evaluation_prompt, evaluate, parse_evaluation_response
+from src.criteria import CriterionDefinition, EvaluationCriteria
+from src.evaluator import (
+    build_evaluation_prompt_single_criterion,
+    evaluate,
+    parse_single_criterion_response,
+)
 from src.handler import ProviderError
 
 
@@ -26,172 +29,189 @@ from src.handler import ProviderError
 
 
 @pytest.fixture
-def balanced_criteria() -> EvaluationCriteria:
-    return DefaultCriteria.balanced()
-
-
-@pytest.fixture
 def simple_criteria() -> EvaluationCriteria:
     return EvaluationCriteria(
         name="Simple",
         criteria=[
-            CriterionDefinition(name="accuracy", description="Is it correct?", weight=2.0),
-            CriterionDefinition(name="clarity", description="Is it clear?", weight=1.0),
+            CriterionDefinition(name="accuracy", description="Is it correct?"),
+            CriterionDefinition(name="clarity", description="Is it clear?"),
         ],
     )
 
 
-def _make_raw_response(scores: dict, reasoning: str = "Good.") -> str:
-    return json.dumps({"criterion_scores": scores, "reasoning": reasoning})
+@pytest.fixture
+def stepped_criteria() -> EvaluationCriteria:
+    return EvaluationCriteria(
+        name="Stepped",
+        criteria=[
+            CriterionDefinition(
+                name="accuracy",
+                description="Is it correct?",
+                evaluation_steps=[
+                    "Are all facts verifiable?",
+                    "Are there contradictions?",
+                ],
+            ),
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------
-# build_evaluation_prompt
+# build_evaluation_prompt_single_criterion
 # ---------------------------------------------------------------------------
 
 
-class TestBuildEvaluationPrompt:
-    def test_prompt_contains_all_criterion_names(self, balanced_criteria):
-        prompt = build_evaluation_prompt(
-            prompt="What is AI?",
-            response="AI stands for Artificial Intelligence.",
-            criteria=balanced_criteria,
+class TestBuildEvaluationPromptSingleCriterion:
+    def test_prompt_contains_criterion_name_and_description(self, simple_criteria):
+        criterion = simple_criteria.criteria[0]
+        prompt = build_evaluation_prompt_single_criterion(
+            prompt="Q?", response="A.", criterion=criterion
         )
-        for criterion in balanced_criteria.criteria:
-            assert criterion.name in prompt
+        assert criterion.name in prompt
+        assert criterion.description in prompt
 
-    def test_prompt_contains_user_prompt(self, balanced_criteria):
-        user_prompt = "Explain quantum computing."
-        prompt = build_evaluation_prompt(
-            prompt=user_prompt,
-            response="It uses qubits.",
-            criteria=balanced_criteria,
-        )
-        assert user_prompt in prompt
+    def test_prompt_requests_score_and_reasoning(self, simple_criteria):
+        criterion = simple_criteria.criteria[0]
+        prompt = build_evaluation_prompt_single_criterion("Q", "A", criterion)
+        assert "score" in prompt.lower()
+        assert "reasoning" in prompt.lower()
 
-    def test_prompt_contains_response_text(self, balanced_criteria):
-        response_text = "A unique response string 12345."
-        prompt = build_evaluation_prompt(
-            prompt="Q?",
-            response=response_text,
-            criteria=balanced_criteria,
-        )
-        assert response_text in prompt
+    def test_prompt_with_evaluation_steps_includes_steps(self, stepped_criteria):
+        criterion = stepped_criteria.criteria[0]
+        prompt = build_evaluation_prompt_single_criterion("Q", "A", criterion)
+        assert "Evaluation Steps" in prompt
+        assert "1. Are all facts verifiable?" in prompt
+        assert "2. Are there contradictions?" in prompt
+        assert "step_reasoning" in prompt
 
-    def test_prompt_requests_json_output(self, balanced_criteria):
-        prompt = build_evaluation_prompt("Q", "A", balanced_criteria)
-        assert "json" in prompt.lower() or "JSON" in prompt
+    def test_prompt_without_steps_omits_step_section(self, simple_criteria):
+        criterion = simple_criteria.criteria[0]
+        prompt = build_evaluation_prompt_single_criterion("Q", "A", criterion)
+        assert "Evaluation Steps" not in prompt
+        assert "step_reasoning" not in prompt
 
 
 # ---------------------------------------------------------------------------
-# parse_evaluation_response
+# parse_single_criterion_response
 # ---------------------------------------------------------------------------
 
 
-class TestParseEvaluationResponse:
-    def test_parse_valid_json_response(self, balanced_criteria):
-        scores = {c.name: 4.0 for c in balanced_criteria.criteria}
-        raw = _make_raw_response(scores)
-
-        result = parse_evaluation_response(
-            raw_text=raw,
-            criteria=balanced_criteria,
-            judge_model="claude-sonnet-4-6",
-            provider="anthropic",
+class TestParseSingleCriterionResponse:
+    def test_parse_valid_single_criterion_response(self):
+        raw = json.dumps({"score": 4.0, "reasoning": "Accurate and clear."})
+        score, reasoning = parse_single_criterion_response(
+            raw, "accuracy", "m", "p"
         )
+        assert score == 4.0
+        assert reasoning == "Accurate and clear."
 
-        assert result["overall_score"] == pytest.approx(4.0)
-        assert result["criterion_scores"] == scores
-        assert result["reasoning"] == "Good."
-        assert result["judge_model"] == "claude-sonnet-4-6"
-        assert result["provider"] == "anthropic"
-
-    def test_parse_json_inside_code_block(self, balanced_criteria):
-        """JSON wrapped in ```json ... ``` fences should be extracted correctly."""
-        scores = {c.name: 3.0 for c in balanced_criteria.criteria}
-        inner = json.dumps({"criterion_scores": scores, "reasoning": "OK."})
+    def test_parse_single_criterion_json_in_code_block(self):
+        inner = json.dumps({"score": 3, "reasoning": "OK"})
         raw = f"```json\n{inner}\n```"
+        score, reasoning = parse_single_criterion_response(
+            raw, "clarity", "m", "p"
+        )
+        assert score == 3.0
+        assert reasoning == "OK"
 
-        result = parse_evaluation_response(raw, balanced_criteria, "m", "p")
+    def test_score_clamped_to_1_5(self):
+        raw = json.dumps({"score": 10, "reasoning": "x"})
+        score, _ = parse_single_criterion_response(raw, "a", "m", "p")
+        assert score == 5.0
+        raw = json.dumps({"score": 0, "reasoning": "x"})
+        score, _ = parse_single_criterion_response(raw, "a", "m", "p")
+        assert score == 1.0
 
-        assert result["overall_score"] == pytest.approx(3.0)
+    def test_missing_score_raises_provider_error(self):
+        raw = json.dumps({"reasoning": "No score."})
+        with pytest.raises(ProviderError, match="score"):
+            parse_single_criterion_response(raw, "a", "m", "p")
 
-    def test_parse_invalid_json_raises_provider_error(self, balanced_criteria):
-        with pytest.raises(ProviderError, match="parse"):
-            parse_evaluation_response(
-                raw_text="not-json",
-                criteria=balanced_criteria,
-                judge_model="m",
-                provider="p",
-            )
+    def test_step_reasoning_embedded_in_reasoning(self):
+        raw = json.dumps({
+            "step_reasoning": ["Yes, all facts verified.", "No contradictions found."],
+            "score": 4,
+            "reasoning": "Overall accurate.",
+        })
+        score, reasoning = parse_single_criterion_response(raw, "accuracy", "m", "p")
+        assert score == 4.0
+        assert "Step 1: Yes, all facts verified." in reasoning
+        assert "Step 2: No contradictions found." in reasoning
+        assert "Final: Overall accurate." in reasoning
 
-    def test_missing_criterion_scores_key_raises_provider_error(self, balanced_criteria):
-        raw = json.dumps({"reasoning": "Missing scores."})
-        with pytest.raises(ProviderError):
-            parse_evaluation_response(raw, balanced_criteria, "m", "p")
-
-    def test_missing_criterion_name_in_scores_raises_provider_error(self, balanced_criteria):
-        """If the LLM returns scores for fewer criteria than expected, raise ProviderError."""
-        partial_scores = {"accuracy": 4.0}  # missing clarity, helpfulness, completeness
-        raw = _make_raw_response(partial_scores)
-        with pytest.raises(ProviderError, match="criterion"):
-            parse_evaluation_response(raw, balanced_criteria, "m", "p")
-
-
-# ---------------------------------------------------------------------------
-# Weighted average calculation
-# ---------------------------------------------------------------------------
-
-
-class TestOverallScoreCalculation:
-    def test_equal_weights_overall_score_is_arithmetic_mean(self, balanced_criteria):
-        scores = {"accuracy": 5.0, "clarity": 3.0, "helpfulness": 4.0, "completeness": 4.0}
-        raw = _make_raw_response(scores)
-        result = parse_evaluation_response(raw, balanced_criteria, "m", "p")
-        expected_mean = (5.0 + 3.0 + 4.0 + 4.0) / 4
-        assert result["overall_score"] == pytest.approx(expected_mean)
-
-    def test_unequal_weights_apply_correctly(self, simple_criteria):
-        """accuracy(weight=2) and clarity(weight=1) → weighted average."""
-        scores = {"accuracy": 5.0, "clarity": 2.0}
-        raw = _make_raw_response(scores)
-        result = parse_evaluation_response(raw, simple_criteria, "m", "p")
-        # (5.0*2 + 2.0*1) / (2+1) = 12/3 = 4.0
-        assert result["overall_score"] == pytest.approx(4.0)
+    def test_no_step_reasoning_returns_plain_reasoning(self):
+        raw = json.dumps({"score": 3, "reasoning": "Plain reasoning."})
+        _, reasoning = parse_single_criterion_response(raw, "a", "m", "p")
+        assert reasoning == "Plain reasoning."
+        assert "Step" not in reasoning
 
 
 # ---------------------------------------------------------------------------
-# evaluate() orchestration
+# evaluate()
 # ---------------------------------------------------------------------------
 
 
 class TestEvaluate:
-    def test_evaluate_calls_provider_complete(self, balanced_criteria):
+    def test_evaluate_calls_provider_per_criterion(self, simple_criteria):
         mock_provider = MagicMock()
-        scores = {c.name: 4.0 for c in balanced_criteria.criteria}
-        mock_provider.complete.return_value = _make_raw_response(scores)
+        mock_provider.complete.side_effect = [
+            json.dumps({"score": 4.0, "reasoning": "Good accuracy."}),
+            json.dumps({"score": 3.0, "reasoning": "Clear enough."}),
+        ]
 
         result = evaluate(
             prompt="Q?",
             response="A.",
-            criteria=balanced_criteria,
+            criteria=simple_criteria,
             provider=mock_provider,
-            model="claude-sonnet-4-6",
+            model="m",
             timeout=30,
         )
 
-        mock_provider.complete.assert_called_once()
-        assert result["overall_score"] == pytest.approx(4.0)
+        assert mock_provider.complete.call_count == 2
+        assert result["criterion_scores"] == {"accuracy": 4.0, "clarity": 3.0}
+        assert "overall_score" not in result
+        assert "総評" in result["reasoning"]
+        assert "accuracy" in result["reasoning"] and "4.0" in result["reasoning"]
+        assert "clarity" in result["reasoning"] and "3.0" in result["reasoning"]
+        assert "総合スコアは算出していない" in result["reasoning"]
+        assert result["criterion_reasoning"]["accuracy"] == "Good accuracy."
+        assert result["criterion_reasoning"]["clarity"] == "Clear enough."
 
-    def test_evaluate_provider_error_propagates(self, balanced_criteria):
+    def test_evaluate_with_steps_surfaces_step_reasoning(self, stepped_criteria):
         mock_provider = MagicMock()
-        mock_provider.complete.side_effect = ProviderError("Timeout")
+        mock_provider.complete.return_value = json.dumps({
+            "step_reasoning": ["Yes, facts verified.", "No contradictions."],
+            "score": 4.0,
+            "reasoning": "Overall accurate.",
+        })
 
-        with pytest.raises(ProviderError, match="Timeout"):
+        result = evaluate(
+            prompt="Q?",
+            response="A.",
+            criteria=stepped_criteria,
+            provider=mock_provider,
+            model="m",
+            timeout=30,
+        )
+
+        assert result["criterion_scores"] == {"accuracy": 4.0}
+        assert "Step 1:" in result["criterion_reasoning"]["accuracy"]
+        assert "Step 2:" in result["criterion_reasoning"]["accuracy"]
+        assert "Final:" in result["criterion_reasoning"]["accuracy"]
+
+    def test_evaluate_provider_error_propagates(self, simple_criteria):
+        mock_provider = MagicMock()
+        mock_provider.complete.side_effect = [
+            json.dumps({"score": 4.0, "reasoning": "OK."}),
+            ProviderError("Rate limited"),
+        ]
+
+        with pytest.raises(ProviderError, match="Rate limited"):
             evaluate(
                 prompt="Q?",
                 response="A.",
-                criteria=balanced_criteria,
+                criteria=simple_criteria,
                 provider=mock_provider,
                 model="m",
                 timeout=30,

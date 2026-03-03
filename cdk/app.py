@@ -8,8 +8,8 @@ CloudFormation template. Run via::
     cdk deploy LlmJudgeStack
 
 Context keys (set in ``cdk.json`` or via ``--context``):
-    default_provider (str):     Default LLM provider (``"anthropic"``,
-                                ``"openai"``, or ``"bedrock"``).
+    default_provider (str):     Default LLM provider (``"bedrock"``,
+                                ``"anthropic"``, or ``"openai"``).
     criteria_bucket_arn (str):  ARN of the S3 bucket containing criteria JSON
                                 files. Leave empty to skip the S3 IAM policy.
 """

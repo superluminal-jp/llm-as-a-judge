@@ -3,13 +3,13 @@
   "title": "LlmJudge Lambda Response",
   "description": "Success response schema from the LLM-as-a-Judge Lambda function",
   "type": "object",
-  "required": ["overall_score", "criterion_scores", "reasoning", "judge_model", "provider"],
+  "required": ["criterion_scores", "reasoning", "judge_model", "provider"],
   "properties": {
     "overall_score": {
       "type": "number",
       "minimum": 1.0,
       "maximum": 5.0,
-      "description": "Weighted average score across all criteria"
+      "description": "Weighted average score across all criteria. Present only in single-call evaluation; omitted in parallel (per-criterion) mode where no aggregation is applied."
     },
     "criterion_scores": {
       "type": "object",
@@ -22,6 +22,13 @@
       "examples": [
         {"accuracy": 4.5, "clarity": 3.0, "helpfulness": 4.0}
       ]
+    },
+    "criterion_reasoning": {
+      "type": "object",
+      "description": "Per-criterion reasoning keyed by criterion name. When evaluation_steps are defined, each value includes numbered step answers followed by a final summary.",
+      "additionalProperties": {
+        "type": "string"
+      }
     },
     "reasoning": {
       "type": "string",
