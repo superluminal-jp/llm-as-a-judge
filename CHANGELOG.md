@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- `src/cli.py`: CLI entry point for local evaluation (`python -m src.cli`) — accepts `--prompt`, `--response`, `--provider`, `--model`, `--criteria` (local file path), `--timeout`, `--indent`
+- `src/criteria.py`: `load_from_file(path)` — loads criteria from a local JSON file; raises `CriteriaLoadError` for missing/invalid files
 - `evaluation_steps` field on `CriterionDefinition` — ordered list of yes/no questions the judge LLM works through before scoring
 - `criterion_reasoning` field in Lambda response — per-criterion reasoning text (includes numbered step answers when `evaluation_steps` defined)
 - `examples/` directory with I/O samples for `default.json` and `disclosure_evaluation_criteria.json` criteria

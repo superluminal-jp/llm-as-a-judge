@@ -21,6 +21,7 @@ from src.criteria import (
     EvaluationCriteria,
     _parse_s3_uri,
     load_from_dict,
+    load_from_file,
     load_from_s3,
 )
 from src.handler import ConfigurationError, CriteriaLoadError, ValidationError
@@ -201,6 +202,40 @@ class TestParseS3Uri:
 # ---------------------------------------------------------------------------
 # DefaultCriteria
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# load_from_file
+# ---------------------------------------------------------------------------
+
+
+class TestLoadFromFile:
+    def test_load_from_file_valid(self, tmp_path):
+        """Valid local JSON file produces correct EvaluationCriteria."""
+        p = tmp_path / "criteria.json"
+        p.write_text(json.dumps(VALID_CRITERIA_DICT), encoding="utf-8")
+        ec = load_from_file(str(p))
+        assert ec.name == "Technical Evaluation"
+        assert len(ec.criteria) == 2
+
+    def test_load_from_file_not_found(self):
+        """Missing file raises CriteriaLoadError."""
+        with pytest.raises(CriteriaLoadError, match="not found"):
+            load_from_file("/nonexistent/path/criteria.json")
+
+    def test_load_from_file_invalid_json(self, tmp_path):
+        """Non-JSON file raises CriteriaLoadError."""
+        p = tmp_path / "bad.json"
+        p.write_text("not-json", encoding="utf-8")
+        with pytest.raises(CriteriaLoadError, match="valid JSON"):
+            load_from_file(str(p))
+
+    def test_load_from_file_invalid_structure(self, tmp_path):
+        """JSON file with invalid criteria structure raises ValidationError."""
+        p = tmp_path / "criteria.json"
+        p.write_text(json.dumps({"name": "Bad"}), encoding="utf-8")
+        with pytest.raises(ValidationError, match="criteria"):
+            load_from_file(str(p))
 
 
 class TestDefaultCriteria:
