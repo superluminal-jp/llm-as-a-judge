@@ -31,6 +31,28 @@ logger = Logger(service="llm-judge")
 _LLM_DURATION_LOG_THRESHOLD_MS = 100
 
 # ---------------------------------------------------------------------------
+# Context rendering helpers
+# ---------------------------------------------------------------------------
+
+
+def _render_context_section(items: list[str]) -> str:
+    """Render a list of context items as a formatted string for judge prompts.
+
+    Single item: returned as plain text (no numbering).
+    Multiple items: each prefixed with ``[N]`` and separated by a blank line.
+
+    Args:
+        items: Non-empty list of non-empty context strings.
+
+    Returns:
+        Formatted string to embed in the ``## Additional Context`` section.
+    """
+    if len(items) == 1:
+        return items[0]
+    return "\n\n".join(f"[{i + 1}] {item}" for i, item in enumerate(items))
+
+
+# ---------------------------------------------------------------------------
 # Prompt construction
 # ---------------------------------------------------------------------------
 
@@ -39,6 +61,8 @@ def build_evaluation_prompt_single_criterion(
     prompt: str,
     response: str,
     criterion: "CriterionDefinition",
+    system_prompt: str | None = None,
+    contexts: list[str] | None = None,
 ) -> str:
     """Build a prompt that asks the judge LLM to score a single criterion only.
 
@@ -46,9 +70,16 @@ def build_evaluation_prompt_single_criterion(
     ``score`` and ``reasoning`` for that dimension only.
 
     Args:
-        prompt:    The original question given to the evaluated LLM.
-        response:  The LLM output to evaluate.
-        criterion: Single criterion definition (name, description, etc.).
+        prompt:        The original question given to the evaluated LLM.
+        response:      The LLM output to evaluate.
+        criterion:     Single criterion definition (name, description, etc.).
+        system_prompt: System-level instructions given to the evaluated LLM.
+                       When provided, rendered before the original prompt so the
+                       judge can assess instruction-following. ``None`` omits the
+                       section.
+        contexts:      Additional reference items (e.g., retrieved documents).
+                       Each item is rendered as a numbered sub-section when
+                       multiple items are present. ``None`` omits the section.
 
     Returns:
         Formatted prompt string for a single-criterion evaluation.
@@ -65,6 +96,16 @@ def build_evaluation_prompt_single_criterion(
         lines.append(f"Score descriptors: {descriptors_str}")
     criteria_block = "\n".join(lines)
 
+    # Build optional sections inserted at the start and after the response.
+    system_prompt_section = (
+        f"## System Prompt\n\n{system_prompt}\n\n" if system_prompt else ""
+    )
+    context_section = (
+        f"## Additional Context\n\n{_render_context_section(contexts)}\n\n"
+        if contexts
+        else ""
+    )
+
     if criterion.evaluation_steps:
         numbered_steps = "\n".join(
             f"{i + 1}. {step}" for i, step in enumerate(criterion.evaluation_steps)
@@ -72,7 +113,7 @@ def build_evaluation_prompt_single_criterion(
         step_count = len(criterion.evaluation_steps)
         return f"""You are an expert evaluator assessing one dimension of an AI-generated response.
 
-## Original Prompt
+{system_prompt_section}## Original Prompt
 
 {prompt}
 
@@ -80,7 +121,7 @@ def build_evaluation_prompt_single_criterion(
 
 {response}
 
-## Criterion to Score
+{context_section}## Criterion to Score
 
 {criteria_block}
 
@@ -102,7 +143,7 @@ Return a **single JSON object** — no other text, no markdown code fences:
 
     return f"""You are an expert evaluator assessing one dimension of an AI-generated response.
 
-## Original Prompt
+{system_prompt_section}## Original Prompt
 
 {prompt}
 
@@ -110,7 +151,7 @@ Return a **single JSON object** — no other text, no markdown code fences:
 
 {response}
 
-## Criterion to Score
+{context_section}## Criterion to Score
 
 {criteria_block}
 
@@ -206,17 +247,38 @@ def _build_summary_prompt(
     prompt: str,
     response: str,
     results: list[tuple[str, float, str]],
+    system_prompt: str | None = None,
+    contexts: list[str] | None = None,
 ) -> str:
-    """Build a prompt that asks the judge LLM to synthesise all criterion results."""
+    """Build a prompt that asks the judge LLM to synthesise all criterion results.
+
+    Args:
+        prompt:        The original question given to the evaluated LLM.
+        response:      The LLM response that was evaluated.
+        results:       Per-criterion (name, score, reasoning) tuples.
+        system_prompt: System-level instructions given to the evaluated LLM.
+                       Included so the summary can reference goal alignment.
+        contexts:      Additional reference items provided at evaluation time.
+                       Included for factual grounding awareness in the summary.
+    """
     criterion_blocks = []
     for name, score, reasoning in results:
         criterion_blocks.append(f"### {name} (score: {score}/5)\n{reasoning}")
     criteria_section = "\n\n".join(criterion_blocks)
 
+    system_prompt_section = (
+        f"## System Prompt\n\n{system_prompt}\n\n" if system_prompt else ""
+    )
+    context_section = (
+        f"## Additional Context\n\n{_render_context_section(contexts)}\n\n"
+        if contexts
+        else ""
+    )
+
     return f"""You are an expert evaluator. All per-criterion evaluation results are provided below.
 Write a concise 総評 (executive summary) in Japanese that synthesises the findings.
 
-## Original Prompt
+{system_prompt_section}## Original Prompt
 
 {prompt}
 
@@ -224,7 +286,7 @@ Write a concise 総評 (executive summary) in Japanese that synthesises the find
 
 {response}
 
-## Per-Criterion Results
+{context_section}## Per-Criterion Results
 
 {criteria_section}
 
@@ -269,13 +331,27 @@ def _evaluate_one_criterion(
     model: str,
     timeout: int,
     provider_label: str,
+    system_prompt: str | None = None,
+    contexts: list[str] | None = None,
 ) -> tuple[str, float, str]:
     """Evaluate a single criterion: build prompt, call LLM, parse response.
 
     Intended to be run in a thread pool. Returns (criterion_name, score, reasoning).
+
+    Args:
+        criterion:      The criterion to evaluate.
+        prompt:         The original question given to the evaluated LLM.
+        response:       The LLM output to evaluate.
+        provider:       LLM provider client.
+        model:          Judge model name/ID.
+        timeout:        API request timeout in seconds.
+        provider_label: Human-readable provider identifier for logging.
+        system_prompt:  System-level instructions given to the evaluated LLM.
+                        Forwarded to the prompt builder for instruction-following assessment.
+        contexts:       Additional reference items forwarded to the prompt builder.
     """
     judge_prompt = build_evaluation_prompt_single_criterion(
-        prompt, response, criterion
+        prompt, response, criterion, system_prompt=system_prompt, contexts=contexts
     )
     llm_start = time.perf_counter()
     raw_text = provider.complete(
@@ -310,6 +386,8 @@ def evaluate(
     model: str,
     timeout: int,
     provider_name: str = "",
+    system_prompt: str | None = None,
+    contexts: list[str] | None = None,
 ) -> dict:
     """Run multi-criteria evaluation: one LLM call per criterion in parallel.
 
@@ -324,6 +402,13 @@ def evaluate(
         model:         Judge model name/ID.
         timeout:       API request timeout in seconds (per call).
         provider_name: Human-readable provider identifier (optional).
+        system_prompt: System-level instructions given to the evaluated LLM.
+                       Included in every per-criterion and summary prompt so the
+                       judge can assess instruction-following. ``None`` omits the
+                       section.
+        contexts:      Additional reference items (e.g., retrieved documents).
+                       Included in every per-criterion and summary prompt.
+                       ``None`` omits the section.
 
     Returns:
         Dict matching ``contracts/lambda-response.json``
@@ -344,6 +429,8 @@ def evaluate(
                 model,
                 timeout,
                 _provider_label,
+                system_prompt,
+                contexts,
             ): c
             for c in criterion_list
         }
@@ -354,7 +441,9 @@ def evaluate(
     results.sort(key=lambda r: order[r[0]])
 
     # Generate executive summary (総評) via one additional LLM call.
-    summary_prompt = _build_summary_prompt(prompt, response, results)
+    summary_prompt = _build_summary_prompt(
+        prompt, response, results, system_prompt=system_prompt, contexts=contexts
+    )
     llm_start = time.perf_counter()
     reasoning = provider.complete(
         messages=[{"role": "user", "content": summary_prompt}],
