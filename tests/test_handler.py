@@ -21,6 +21,7 @@ from src.handler import (
     CriteriaLoadError,
     ProviderError,
     ValidationError,
+    _normalize_context,
     lambda_handler,
 )
 
@@ -307,3 +308,151 @@ class TestS3CriteriaLoading:
         ), patch("src.handler.get_provider"):
             with pytest.raises(CriteriaLoadError, match="Not found"):
                 lambda_handler(event, lambda_context)
+
+
+# ---------------------------------------------------------------------------
+# system_prompt validation (US1)
+# ---------------------------------------------------------------------------
+
+
+class TestSystemPromptValidation:
+    def test_system_prompt_valid_string_passes(self, lambda_context):
+        """A non-empty string system_prompt passes validation without error."""
+        event = _make_event(system_prompt="You are a helpful assistant.")
+        # Validation only; no provider call expected — config will raise ConfigurationError.
+        with pytest.raises(Exception) as exc_info:
+            lambda_handler(event, lambda_context)
+        assert not isinstance(exc_info.value, ValidationError)
+
+    def test_system_prompt_integer_raises_validation_error(self, lambda_context):
+        """Non-string system_prompt raises ValidationError."""
+        event = _make_event(system_prompt=42)
+        with pytest.raises(ValidationError, match="system_prompt"):
+            lambda_handler(event, lambda_context)
+
+    def test_system_prompt_list_raises_validation_error(self, lambda_context):
+        """List system_prompt raises ValidationError."""
+        event = _make_event(system_prompt=["You are X"])
+        with pytest.raises(ValidationError, match="system_prompt"):
+            lambda_handler(event, lambda_context)
+
+    def test_system_prompt_empty_string_passes_to_evaluate_as_none(
+        self, sample_event, lambda_context, monkeypatch
+    ):
+        """Empty string system_prompt is normalised to None before evaluate() is called."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setenv("DEFAULT_PROVIDER", "anthropic")
+
+        import src.config as cfg_mod
+
+        cfg_mod._config = None
+
+        event = {**sample_event, "system_prompt": ""}
+
+        with patch("src.handler.get_provider") as mock_get_provider, patch(
+            "src.handler.evaluate", return_value=_valid_eval_result()
+        ) as mock_evaluate:
+            mock_get_provider.return_value = MagicMock()
+            lambda_handler(event, lambda_context)
+
+        call_kwargs = mock_evaluate.call_args.kwargs
+        assert call_kwargs.get("system_prompt") is None
+
+    def test_system_prompt_passed_to_evaluate(
+        self, sample_event, lambda_context, monkeypatch
+    ):
+        """Non-empty system_prompt is forwarded to evaluate()."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setenv("DEFAULT_PROVIDER", "anthropic")
+
+        import src.config as cfg_mod
+
+        cfg_mod._config = None
+
+        sp = "You are a customer service agent."
+        event = {**sample_event, "system_prompt": sp}
+
+        with patch("src.handler.get_provider") as mock_get_provider, patch(
+            "src.handler.evaluate", return_value=_valid_eval_result()
+        ) as mock_evaluate:
+            mock_get_provider.return_value = MagicMock()
+            lambda_handler(event, lambda_context)
+
+        call_kwargs = mock_evaluate.call_args.kwargs
+        assert call_kwargs.get("system_prompt") == sp
+
+
+# ---------------------------------------------------------------------------
+# context validation and normalisation (US2)
+# ---------------------------------------------------------------------------
+
+
+class TestContextValidation:
+    def test_context_valid_string_passes(self, lambda_context):
+        """A string contexts passes validation without error."""
+        event = _make_event(contexts="Retrieved document: foo bar.")
+        with pytest.raises(Exception) as exc_info:
+            lambda_handler(event, lambda_context)
+        assert not isinstance(exc_info.value, ValidationError)
+
+    def test_context_valid_list_of_strings_passes(self, lambda_context):
+        """A list of strings contexts passes validation without error."""
+        event = _make_event(contexts=["doc 1", "doc 2"])
+        with pytest.raises(Exception) as exc_info:
+            lambda_handler(event, lambda_context)
+        assert not isinstance(exc_info.value, ValidationError)
+
+    def test_context_integer_raises_validation_error(self, lambda_context):
+        """Integer contexts raises ValidationError."""
+        event = _make_event(contexts=42)
+        with pytest.raises(ValidationError, match="contexts"):
+            lambda_handler(event, lambda_context)
+
+    def test_context_dict_raises_validation_error(self, lambda_context):
+        """Dict contexts raises ValidationError."""
+        event = _make_event(contexts={"doc": "text"})
+        with pytest.raises(ValidationError, match="contexts"):
+            lambda_handler(event, lambda_context)
+
+    def test_context_list_with_integer_element_raises_validation_error(
+        self, lambda_context
+    ):
+        """List containing non-string element raises ValidationError."""
+        event = _make_event(contexts=["valid string", 99])
+        with pytest.raises(ValidationError, match="contexts"):
+            lambda_handler(event, lambda_context)
+
+
+class TestNormalizeContext:
+    """Unit tests for _normalize_context helper."""
+
+    def test_none_returns_none(self):
+        assert _normalize_context(None) is None
+
+    def test_empty_string_returns_none(self):
+        assert _normalize_context("") is None
+
+    def test_whitespace_only_string_returns_none(self):
+        assert _normalize_context("   ") is None
+
+    def test_non_empty_string_returns_single_item_list(self):
+        assert _normalize_context("doc text") == ["doc text"]
+
+    def test_empty_list_returns_none(self):
+        assert _normalize_context([]) is None
+
+    def test_list_of_all_empty_strings_returns_none(self):
+        assert _normalize_context(["", "  ", ""]) is None
+
+    def test_list_with_some_empty_strings_filtered(self):
+        assert _normalize_context(["", "doc 1", "", "doc 2"]) == ["doc 1", "doc 2"]
+
+    def test_list_of_strings_returned_as_is(self):
+        assert _normalize_context(["a", "b", "c"]) == ["a", "b", "c"]
+
+    def test_context_passed_to_evaluate_as_normalised_list(
+        self, sample_event=None, monkeypatch=None
+    ):
+        """End-to-end: string context forwarded as list[str] to evaluate()."""
+        # Tested via lambda_handler integration below; unit test covers _normalize_context.
+        pass

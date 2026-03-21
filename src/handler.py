@@ -66,6 +66,27 @@ _SUPPORTED_PROVIDERS = frozenset({"anthropic", "openai", "bedrock"})
 # ---------------------------------------------------------------------------
 
 
+def _normalize_context(value: object) -> list[str] | None:
+    """Normalise the raw ``contexts`` event field to a list of non-empty strings.
+
+    Accepts a bare string (treated as a single-item list) or a list of strings
+    (already validated). Empty strings and whitespace-only strings are filtered
+    out. Returns ``None`` when the result would be empty.
+
+    Args:
+        value: Raw value from the Lambda event (string, list, or None).
+
+    Returns:
+        A non-empty list of non-empty strings, or ``None`` if nothing remains
+        after filtering.
+    """
+    if value is None:
+        return None
+    items: list[str] = [value] if isinstance(value, str) else list(value)
+    filtered = [s for s in items if s and s.strip()]
+    return filtered if filtered else None
+
+
 def _validate_event(event: dict) -> None:
     """Validate that mandatory event fields are present and non-empty.
 
@@ -80,6 +101,25 @@ def _validate_event(event: dict) -> None:
         if not value or not isinstance(value, str) or not value.strip():
             raise ValidationError(
                 f"Event field '{field}' is required and must be a non-empty string."
+            )
+
+    system_prompt = event.get("system_prompt")
+    if system_prompt is not None and not isinstance(system_prompt, str):
+        raise ValidationError(
+            "Event field 'system_prompt' must be a string when provided."
+        )
+
+    contexts = event.get("contexts")
+    if contexts is not None:
+        if isinstance(contexts, list):
+            if not all(isinstance(item, str) for item in contexts):
+                raise ValidationError(
+                    "Event field 'contexts' must be a list of strings; "
+                    "all elements must be strings."
+                )
+        elif not isinstance(contexts, str):
+            raise ValidationError(
+                "Event field 'contexts' must be a string or list of strings when provided."
             )
 
     provider = event.get("provider")
@@ -173,6 +213,8 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
             model=judge_model,
             timeout=config.request_timeout,
             provider_name=provider_name,
+            system_prompt=event.get("system_prompt") or None,
+            contexts=_normalize_context(event.get("contexts")),
         )
 
         duration_sec = time.perf_counter() - start_time
