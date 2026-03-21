@@ -31,7 +31,17 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+Evaluate each principle from `.specify/memory/constitution.md` against this feature:
+
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| I. Living Documentation — docs updated in same commit | ✅ / ⚠ / ❌ | [notes] |
+| II. Production-Grade Observability — structured logging, error hierarchy, why-comments | ✅ / ⚠ / ❌ | [notes] |
+| III. Codebase Clarity — no spec IDs or spec-workflow terms in src/ or tests/ | ✅ / ⚠ / ❌ | [notes] |
+| IV. Minimal Structure — stateless, no unnecessary modules, YAGNI | ✅ / ⚠ / ❌ | [notes] |
+| V. Test Coverage — ≥ 90%, no real API calls, tests assert behaviour | ✅ / ⚠ / ❌ | [notes] |
+
+Any ❌ or ⚠ MUST be resolved or justified in the Complexity Tracking table before proceeding.
 
 ## Project Structure
 
