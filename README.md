@@ -1,6 +1,6 @@
 # LLM-as-a-Judge
 
-[![Tests](https://img.shields.io/badge/tests-56%20passing-brightgreen)](#テスト)
+[![Tests](https://img.shields.io/badge/tests-98%20passing-brightgreen)](#テスト)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://python.org)
 [![AWS Lambda](https://img.shields.io/badge/runtime-AWS%20Lambda-orange)](https://aws.amazon.com/lambda/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -41,8 +41,9 @@ src/
     └── bedrock.py      # Bedrock Converse API（IAM 認証）
 
 criteria/
-├── default.json                        # 汎用評価クライテリア（7 軸）
-└── disclosure_evaluation_criteria.json # 情報公開法第 5 条評価基準（6 条号）
+├── default.json                          # 汎用評価クライテリア（7 軸）
+├── disclosure_evaluation_criteria.json   # 情報公開法第 5 条評価基準（6 条号）
+└── aisi_safety_evaluation_criteria.json  # AISI AIセーフティ評価観点（10 軸）
 
 examples/
 ├── default_evaluation_result.json      # default.json を使った評価 I/O サンプル
@@ -72,17 +73,21 @@ scripts/
   "response": "機械学習とは、データから自動的に学習するAIの一分野です...",
   "provider": "bedrock",
   "judge_model": "amazon.nova-lite-v1:0",
-  "criteria_file": "s3://my-bucket/criteria/custom.json"
+  "criteria_file": "s3://my-bucket/criteria/custom.json",
+  "system_prompt": "あなたは機械学習の専門家として回答してください。",
+  "contexts": ["参考資料1: 機械学習の歴史...", "参考資料2: 主要なアルゴリズム..."]
 }
 ```
 
-| フィールド | 必須 | デフォルト |
-|-----------|------|-----------|
-| `prompt` | ✅ | — |
-| `response` | ✅ | — |
-| `provider` | ✗ | `DEFAULT_PROVIDER` 環境変数 |
-| `judge_model` | ✗ | プロバイダー別デフォルトモデル |
-| `criteria_file` | ✗ | デフォルト balanced クライテリア |
+| フィールド | 型 | 必須 | デフォルト | 説明 |
+|-----------|-----|------|-----------|------|
+| `prompt` | `string` | ✅ | — | 評価対象 LLM に与えたプロンプト |
+| `response` | `string` | ✅ | — | 評価対象 LLM の回答 |
+| `provider` | `string` | ✗ | `DEFAULT_PROVIDER` 環境変数 | `anthropic` / `openai` / `bedrock` |
+| `judge_model` | `string` | ✗ | プロバイダー別デフォルトモデル | ジャッジに使用するモデル ID |
+| `criteria_file` | `string` | ✗ | デフォルト balanced クライテリア | S3 URI（例: `s3://bucket/criteria.json`） |
+| `system_prompt` | `string` | ✗ | `null` | 評価対象 LLM に与えたシステムプロンプト。ジャッジプロンプトに挿入され、指示追従性の評価に利用される |
+| `contexts` | `string` または `string[]` | ✗ | `null` | 評価時に参照する追加コンテキスト（RAG 取得ドキュメント等）。複数指定時は `[1]`, `[2]` 番号付きで挿入される |
 
 ## Lambda レスポンス
 
@@ -282,7 +287,7 @@ aws lambda invoke \
 
 ## テスト
 
-56 テスト、実際の API 呼び出しなし（`unittest.mock` + `moto[s3]` でモック）：
+98 テスト、実際の API 呼び出しなし（`unittest.mock` + `moto[s3]` でモック）：
 
 ```bash
 pytest                                         # 全テスト
