@@ -1,7 +1,7 @@
 {
   "_meta": {
     "description": "default.json クライテリアを使った実際の評価結果サンプル。7 軸すべてに evaluation_steps が定義されており、criterion_reasoning に各ステップの回答と最終判断が含まれる。reasoning は全クライテリアを総合した LLM 生成の総評。",
-    "command": "python -m src.cli --provider bedrock --prompt '機械学習とは何ですか？' --response '機械学習はデータからパターンを学習する技術です。' --criteria criteria/default.json",
+    "command": "Lambda 関数に同じ input を渡して取得（README の Lambda 呼び出し例を参照）",
     "note": "短い一文回答を意図的に使用。completeness（1.0）・helpfulness（2.0）が低く、reasoning にその分析が総合的に反映されている。"
   },
   "input": {

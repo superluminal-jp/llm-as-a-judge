@@ -1,7 +1,7 @@
 {
   "_meta": {
     "description": "disclosure_evaluation_criteria.json クライテリアを使った実際の評価結果サンプル。第1号・第6号のみを援用した不開示決定を評価し、第2号（法人等情報）・第5号（内部審議）の欠落を検出する例。reasoning は全クライテリアを総合した LLM 生成の総評。",
-    "command": "python -m src.cli --provider bedrock --prompt '...' --response '...' --criteria criteria/disclosure_evaluation_criteria.json",
+    "command": "Lambda 関数に同じ input を渡して取得（README の Lambda 呼び出し例を参照）",
     "note": "第3号（国家安全）・第4号（公共安全）は非該当でスコア5。第1号は基本方向は正しいがスコア3。第2号・第5号の欠落によりスコア1・2。第6号は概ね正確だがスコア2。"
   },
   "input": {

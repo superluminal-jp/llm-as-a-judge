@@ -8,8 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
-- `src/cli.py`: CLI entry point for local evaluation (`python -m src.cli`) — accepts `--prompt`, `--response`, `--provider`, `--model`, `--criteria` (local file path), `--timeout`, `--indent` (`python -m src.cli`) — accepts `--prompt`, `--response`, `--provider`, `--model`, `--criteria` (local file path), `--timeout`, `--indent`
-- `src/criteria.py`: `load_from_file(path)` — loads criteria from a local JSON file; raises `CriteriaLoadError` for missing/invalid files
+- `config/parameters.json` (and `parameters.example.json`) — deployment/CDK parameters (`aws_region`, `environment`, `default_provider`, `criteria_bucket_arn`); read by `cdk/app.py` and `scripts/deploy.sh` (region when `AWS_REGION` unset)
 - `evaluation_steps` field on `CriterionDefinition` — ordered list of yes/no questions the judge LLM works through before scoring
 - `criterion_reasoning` field in Lambda response — per-criterion reasoning text (includes numbered step answers when `evaluation_steps` defined)
 - `examples/` directory with I/O samples for `default.json` and `disclosure_evaluation_criteria.json` criteria
@@ -22,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- `README.md`: removed license badge and「ライセンス」節; removed root `LICENSE` — リポジトリ内ではライセンスを明示しない
 - `reasoning` field is now an LLM-generated executive summary (総評) synthesising all per-criterion findings, replacing the previous score-list string; one additional LLM call is made after parallel criterion evaluation
 - Prompt builder includes numbered evaluation steps and requests `step_reasoning` JSON array when `evaluation_steps` are defined
 - Response parser embeds `step_reasoning` into `criterion_reasoning` as `Step N: … \n\nFinal: …` format
@@ -33,9 +33,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Updated `contracts/criteria-file.json` schema to include `evaluation_steps` property
 - Updated `contracts/lambda-response.json` schema to include `criterion_reasoning` property
 - Test count: 58 → 56 (criteria tests updated for new fields)
+- Documentation: README badge and test section (94 tests, ~88% `src/` coverage), deploy prerequisites (Docker required for bundling), CDK stack notes; `criteria/README.md` runtime criteria loading clarified
+- Documentation: added `docs/` (index, architecture, development, troubleshooting, JSON schema pointers), `docs/quickstart.md`, `docs/repository-layout.md`; expanded `config/README.md` (precedence, `parameters.local.json`)
+- `cdk/app.py` and `scripts/deploy.sh`: merge `config/parameters.local.json` over `parameters.json` (same keys) when present
 
 ### Removed
 
+- Version control for AI/editor tooling directories: `.claude/`, `.cursor/`, `.specify/` removed from the Git index; `.gitignore` now excludes those plus `.speckit/`, `.agents/`, `.codex/` (files remain locally)
+- `specs/` excluded from Git; canonical JSON Schemas in repository root [`contracts/`](contracts/) (`lambda-event.json`, `lambda-response.json`, `criteria-file.json`)
+- `CLAUDE.md` excluded from Git (local agent notes only)
+- Per-directory READMEs under `src/`, `tests/`, `scripts/`, `cdk/`, `contracts/` removed; content merged into [`docs/repository-layout.md`](docs/repository-layout.md)
+- Local evaluation CLI (`src/cli.py`, `python -m src.cli`) — invoke the deployed Lambda or run tests instead
+- `load_from_file()` in `src/criteria.py` — criteria loaded at runtime via S3 (`load_from_s3`) or `DefaultCriteria.balanced()` only
+- CDK `_LocalBundler` / `ILocalBundling` — Lambda asset bundling uses Docker only (`cdk synth` / `cdk deploy` require a running Docker daemon)
 - `criteria/administrative_information_non_disclosure.json` — replaced by `disclosure_evaluation_criteria.json`
 - `criteria/template.json` — removed (redundant with README examples)
 

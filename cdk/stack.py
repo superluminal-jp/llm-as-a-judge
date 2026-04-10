@@ -17,58 +17,10 @@ API key management:
 
 from __future__ import annotations
 
-import os
-import shutil
-import subprocess
-from typing import Any
-
 import aws_cdk as cdk
 import aws_cdk.aws_iam as iam
 import aws_cdk.aws_lambda as lambda_
-import jsii
 from constructs import Construct
-
-# ---------------------------------------------------------------------------
-# Local bundler (Docker fallback)
-# ---------------------------------------------------------------------------
-
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-@jsii.implements(cdk.ILocalBundling)
-class _LocalBundler:
-    """Local bundling fallback used when Docker is unavailable.
-
-    CDK tries the local bundler first; if :meth:`try_bundle` returns ``False``,
-    CDK falls back to Docker bundling. This is useful for local ``cdk synth``
-    runs on machines where the Docker daemon is not running.
-    """
-
-    def try_bundle(self, output_dir: str, options: Any) -> bool:
-        """Install runtime dependencies and copy source files locally.
-
-        Args:
-            output_dir: The directory CDK expects the bundle to appear in.
-            options:    CDK BundlingOptions (unused; accepted for interface
-                        compatibility).
-
-        Returns:
-            ``True`` on success, ``False`` to signal CDK should use Docker.
-        """
-        result = subprocess.run(
-            ["pip", "install", "-r", "requirements.txt", "-t", output_dir],
-            cwd=_REPO_ROOT,
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            return False
-
-        # Copy src/ as a package (preserving the directory so that
-        # "from src.X import ..." resolves correctly in the Lambda runtime).
-        src_dir = os.path.join(_REPO_ROOT, "src")
-        dst_src_dir = os.path.join(output_dir, "src")
-        shutil.copytree(src_dir, dst_src_dir, dirs_exist_ok=True)
-        return True
 
 
 class LlmJudgeStack(cdk.Stack):
@@ -78,7 +30,9 @@ class LlmJudgeStack(cdk.Stack):
     ``--context`` flags) so that the same stack definition can be reused
     across environments (dev, staging, prod).
 
-    Context keys:
+    Context keys (``--context`` / ``cdk.json``) override ``config/parameters.json``
+    when set to a non-empty value:
+
         default_provider (str):     LLM provider used when the Lambda event
                                     does not specify one. Defaults to
                                     ``"bedrock"``.
@@ -86,12 +40,18 @@ class LlmJudgeStack(cdk.Stack):
                                     JSON files. When provided, an
                                     ``s3:GetObject`` policy is attached to the
                                     Lambda execution role.
+
+    Keyword arguments (from :mod:`cdk.app` reading ``config/parameters.json``) fill
+    values when context is unset or empty.
     """
 
     def __init__(
         self,
         scope: Construct,
         construct_id: str,
+        *,
+        default_provider: str | None = None,
+        criteria_bucket_arn: str | None = None,
         **kwargs,
     ) -> None:
         """Initialise the LlmJudgeStack.
@@ -100,14 +60,33 @@ class LlmJudgeStack(cdk.Stack):
             scope:        CDK construct scope (the :class:`~aws_cdk.App`).
             construct_id: Logical ID used to identify this stack in
                           CloudFormation and CDK.
+            default_provider: Optional override from ``config/parameters.json``.
+            criteria_bucket_arn: Optional override from ``config/parameters.json``.
             **kwargs:     Additional keyword arguments forwarded to
                           :class:`~aws_cdk.Stack`.
         """
         super().__init__(scope, construct_id, **kwargs)
 
-        # Read CDK context values; fall back to safe defaults.
-        default_provider: str = self.node.try_get_context("default_provider") or "bedrock"
-        criteria_bucket_arn: str = self.node.try_get_context("criteria_bucket_arn") or ""
+        def _first_non_empty(*vals: object) -> str | None:
+            for v in vals:
+                if v is None:
+                    continue
+                s = str(v).strip()
+                if s:
+                    return s
+            return None
+
+        default_provider = (
+            _first_non_empty(
+                self.node.try_get_context("default_provider"),
+                default_provider,
+            )
+            or "bedrock"
+        )
+        criteria_bucket_arn = _first_non_empty(
+            self.node.try_get_context("criteria_bucket_arn"),
+            criteria_bucket_arn,
+        ) or ""
 
         # -----------------------------------------------------------------
         # Lambda function
@@ -121,14 +100,12 @@ class LlmJudgeStack(cdk.Stack):
             # The src/ package is preserved in the bundle so that intra-package
             # imports (from src.config, from src.criteria, …) resolve correctly.
             handler="src.handler.lambda_handler",
-            # Bundle src/ as a package alongside pip-installed dependencies.
-            # _LocalBundler runs first (no Docker required); CDK falls back to
-            # Docker only when the local bundler returns False.
+            # Bundle src/ as a package alongside pip-installed dependencies
+            # (requires Docker for cdk synth / deploy).
             code=lambda_.Code.from_asset(
                 "..",
                 bundling=cdk.BundlingOptions(
                     image=lambda_.Runtime.PYTHON_3_12.bundling_image,
-                    local=_LocalBundler(),
                     command=[
                         "bash",
                         "-c",

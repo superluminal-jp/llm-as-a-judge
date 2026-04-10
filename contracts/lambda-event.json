@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LlmJudge Lambda Event",
+  "description": "Input event schema for the LLM-as-a-Judge Lambda function. Field name `contexts` matches `src/handler.py` (plural).",
+  "type": "object",
+  "required": ["prompt", "response"],
+  "properties": {
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The prompt or question that was given to the LLM being evaluated"
+    },
+    "response": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The LLM response to evaluate"
+    },
+    "system_prompt": {
+      "type": "string",
+      "description": "System-level instructions given to the evaluated LLM before the conversation (e.g., persona, language, behavioral constraints). Empty string is treated as absent.",
+      "examples": [
+        "You are a helpful customer service agent for Acme Corp. Always respond in polite Japanese.",
+        "You are an expert Python developer. Answer only with code and brief explanations."
+      ]
+    },
+    "contexts": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "A single additional reference item. Empty string is treated as absent."
+        },
+        {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Multiple reference items (e.g., several retrieved documents). Each item is rendered as a numbered sub-section in the judge prompt. Empty strings within the list are filtered out."
+        }
+      ],
+      "description": "Additional reference material for evaluation (RAG documents, etc.). Accepts a single string or a list of strings.",
+      "examples": [
+        "Retrieved document: 'The return policy allows returns within 30 days of purchase with a valid receipt.'",
+        [
+          "Document 1: 'The return policy allows returns within 30 days.'",
+          "Document 2: 'Items must be unused and in original packaging.'"
+        ]
+      ]
+    },
+    "criteria_file": {
+      "type": "string",
+      "pattern": "^s3://[a-zA-Z0-9._-]+/.+\\.json$",
+      "description": "S3 URI to a JSON file defining evaluation criteria. If omitted, default criteria are used.",
+      "examples": ["s3://my-bucket/criteria/accuracy.json"]
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["anthropic", "openai", "bedrock"],
+      "description": "LLM provider to use as judge. Defaults to DEFAULT_PROVIDER env var."
+    },
+    "judge_model": {
+      "type": "string",
+      "description": "Specific model name to use. Defaults to provider-specific env var (ANTHROPIC_MODEL, etc.)"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "prompt": "What is machine learning?",
+      "response": "Machine learning is a subset of AI...",
+      "provider": "anthropic"
+    },
+    {
+      "prompt": "What is our return policy?",
+      "response": "You can return items within 30 days.",
+      "system_prompt": "You are a customer service agent for Acme Corp. Always respond in polite Japanese.",
+      "contexts": [
+        "The return policy allows returns within 30 days of purchase with a valid receipt.",
+        "Items must be unused and in original packaging."
+      ],
+      "provider": "bedrock",
+      "judge_model": "amazon.nova-lite-v1:0"
+    }
+  ]
+}
