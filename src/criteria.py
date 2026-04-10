@@ -8,7 +8,7 @@ S3 loading uses a module-level boto3 client cached per Lambda container to
 avoid re-establishing the connection on every invocation.
 
 S3 URI format: ``s3://<bucket>/<key>``
-Criteria file format: see ``contracts/criteria-file.json``
+Criteria file format: see repository ``contracts/criteria-file.json``
 """
 
 from __future__ import annotations
@@ -243,40 +243,6 @@ def _parse_s3_uri(s3_uri: str) -> tuple[str, str]:
             f"Invalid S3 URI '{s3_uri}'. Expected format: s3://<bucket>/<key>"
         )
     return match.group(1), match.group(2)
-
-
-def load_from_file(path: str) -> EvaluationCriteria:
-    """Load and parse a criteria JSON file from the local filesystem.
-
-    Args:
-        path: Absolute or relative path to a JSON file matching
-              ``contracts/criteria-file.json``.
-
-    Returns:
-        Populated :class:`EvaluationCriteria`.
-
-    Raises:
-        CriteriaLoadError: If the file is not found or contains invalid JSON.
-        ValidationError: If the JSON structure is invalid.
-    """
-    from src.handler import CriteriaLoadError
-
-    try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        raise CriteriaLoadError(f"Criteria file not found: {path}") from None
-    except json.JSONDecodeError as exc:
-        raise CriteriaLoadError(
-            f"Criteria file at {path} is not valid JSON: {exc}"
-        ) from exc
-
-    criteria = load_from_dict(data)
-    logger.info(
-        "Criteria loaded from file",
-        extra={"path": path, "criteria_count": len(criteria.criteria)},
-    )
-    return criteria
 
 
 def load_from_s3(s3_uri: str) -> EvaluationCriteria:

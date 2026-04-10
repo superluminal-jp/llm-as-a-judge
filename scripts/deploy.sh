@@ -5,7 +5,7 @@
 #   ./scripts/deploy.sh [--env dev|prod] [--region REGION]
 #
 # Environment Variables (optional — override CDK context defaults):
-#   AWS_REGION            AWS region to deploy into (default: us-east-1)
+#   AWS_REGION            AWS region (overrides merged config/parameters*.json aws_region)
 #   AWS_ACCOUNT_ID        AWS account ID (used for CDK bootstrap)
 #   CRITERIA_BUCKET_ARN   ARN of the S3 bucket for criteria files
 #
@@ -20,8 +20,33 @@ set -euo pipefail
 # Defaults
 # ---------------------------------------------------------------------------
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 ENV="dev"
-REGION="${AWS_REGION:-us-east-1}"
+if [[ -n "${AWS_REGION:-}" ]]; then
+  REGION="${AWS_REGION}"
+elif [[ -f "${REPO_ROOT}/config/parameters.json" ]] || [[ -f "${REPO_ROOT}/config/parameters.local.json" ]]; then
+  REGION="$(
+    REPO_ROOT="${REPO_ROOT}" python3 <<'PY'
+import json
+import os
+
+def load(name: str) -> dict:
+    path = os.path.join(os.environ["REPO_ROOT"], "config", name)
+    if not os.path.isfile(path):
+        return {}
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    return data if isinstance(data, dict) else {}
+
+merged = {**load("parameters.json"), **load("parameters.local.json")}
+print(merged.get("aws_region", "us-east-1"))
+PY
+  )"
+else
+  REGION="us-east-1"
+fi
 CRITERIA_BUCKET_ARN="${CRITERIA_BUCKET_ARN:-}"
 
 # ---------------------------------------------------------------------------

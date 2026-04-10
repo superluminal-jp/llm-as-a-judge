@@ -1,13 +1,25 @@
 # LLM-as-a-Judge
 
-[![Tests](https://img.shields.io/badge/tests-98%20passing-brightgreen)](#テスト)
+[![Tests](https://img.shields.io/badge/tests-94%20passing-brightgreen)](#テスト)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](https://python.org)
 [![AWS Lambda](https://img.shields.io/badge/runtime-AWS%20Lambda-orange)](https://aws.amazon.com/lambda/)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 LLM が生成した回答を、別の LLM を審査役（ジャッジ）として多角的に評価する AWS Lambda 関数。Anthropic・OpenAI・Amazon Bedrock をジャッジモデルとして利用可能。
 
 各クライテリアを並列に独立評価し、段階的推論（`evaluation_steps`）によって透明性の高いスコアリングを実現する。
+
+## ドキュメント
+
+| リソース | 内容 |
+|----------|------|
+| **[docs/quickstart.md](docs/quickstart.md)** | 最短でテスト→デプロイ→呼び出し |
+| **[docs/README.md](docs/README.md)** | 索引（アーキテクチャ・開発・トラブルシューティング・JSON 契約の場所） |
+| [docs/repository-layout.md](docs/repository-layout.md) | `src` / `tests` / `scripts` / `cdk` / `contracts` の役割 |
+| [docs/architecture.md](docs/architecture.md) | 処理の流れとモジュールの役割 |
+| [docs/development.md](docs/development.md) | 依存関係・テスト・ディレクトリの読み方 |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | 典型障害の切り分け |
+| [docs/schemas.md](docs/schemas.md) | Lambda／クライテリアの JSON Schema パスと注意点 |
+| [config/README.md](config/README.md) | デプロイパラメータ（`parameters.json`） |
 
 ## アーキテクチャ
 
@@ -49,12 +61,22 @@ examples/
 ├── default_evaluation_result.json      # default.json を使った評価 I/O サンプル
 └── disclosure_evaluation_result.json   # 情報公開法評価 I/O サンプル
 
+contracts/
+├── lambda-event.json      # Lambda 入力（JSON Schema）
+├── lambda-response.json   # Lambda 成功レスポンス
+└── criteria-file.json     # S3 クライテリア JSON
+
 tests/
 ├── conftest.py         # 共有フィクスチャ
 ├── test_handler.py     # lambda_handler() テスト
 ├── test_evaluator.py   # プロンプト構築・レスポンスパーステスト
 ├── test_criteria.py    # EvaluationCriteria・S3 ローダーテスト
 └── test_providers.py   # プロバイダークライアントテスト
+
+config/
+├── parameters.json         # デプロイ・CDK 用パラメータ（リージョン、default_provider、criteria バケット ARN 等）
+├── parameters.example.json # テンプレート
+└── README.md               # パラメータの説明
 
 cdk/
 ├── app.py              # CDK App エントリポイント
@@ -63,6 +85,15 @@ cdk/
 
 scripts/
 └── deploy.sh           # Bootstrap + cdk deploy ラッパー
+
+docs/
+├── README.md              # ドキュメント索引
+├── quickstart.md          # 最短の試し方（テスト・デプロイ・invoke）
+├── repository-layout.md   # src / tests / scripts / cdk / contracts
+├── architecture.md        # 処理フロー・モジュール役割
+├── development.md         # 開発・テスト
+├── troubleshooting.md     # 運用時の切り分け
+└── schemas.md             # JSON 契約（`contracts/*.json`）
 ```
 
 ## Lambda イベント
@@ -187,7 +218,7 @@ Final: 事実の正確性は高く、主要な主張はすべて検証可能。
 | `evaluation_steps` | ✗ | ステップバイステップの評価チェックリスト |
 | `score_descriptors` | ✗ | スコア値 → 説明テキストのマッピング |
 
-Lambda 実行ロールに対象バケットの `s3:GetObject` が必要（CDK コンテキスト `criteria_bucket_arn` で設定）。
+Lambda 実行ロールに対象バケットの `s3:GetObject` が必要（[`config/parameters.json`](config/parameters.json) の `criteria_bucket_arn` または CDK `--context` で付与）。
 
 ## 環境変数
 
@@ -238,7 +269,7 @@ pytest tests/test_evaluator.py -v
 
 - AWS CLI（適切な認証情報が設定済み）
 - CDK CLI: `npm install -g aws-cdk`
-- Docker（CDK アセットバンドリング用）
+- Docker（**必須** — `cdk synth` / `cdk deploy` 時の Lambda アセットバンドルに使用。デーモンが起動していること）
 
 ### クイックデプロイ
 
@@ -255,6 +286,10 @@ export ANTHROPIC_API_KEY=sk-ant-...   # Anthropic を使う場合
 # S3 クライテリアバケットアクセスを付与してデプロイ
 CRITERIA_BUCKET_ARN=arn:aws:s3:::my-bucket ./scripts/deploy.sh
 ```
+
+### パラメータファイル
+
+リポジトリ直下の [`config/parameters.json`](config/parameters.json) で `aws_region`・`default_provider`・`criteria_bucket_arn` などを指定する（[`config/README.md`](config/README.md) 参照）。`cdk deploy` の `--context` は同じキーを上書きできる。
 
 ### 手動 CDK デプロイ
 
@@ -287,7 +322,7 @@ aws lambda invoke \
 
 ## テスト
 
-98 テスト、実際の API 呼び出しなし（`unittest.mock` + `moto[s3]` でモック）：
+94 テスト、実際の API 呼び出しなし（`unittest.mock` + `moto[s3]` でモック）：
 
 ```bash
 pytest                                         # 全テスト
@@ -295,17 +330,14 @@ pytest tests/test_handler.py -v               # ハンドラーテスト
 pytest tests/test_evaluator.py -v             # 評価ロジックテスト
 pytest tests/test_criteria.py -v              # クライテリア・S3 テスト
 pytest tests/test_providers.py -v             # プロバイダーテスト
-pytest --cov=src --cov-report=term-missing    # カバレッジ付き（92%）
+pytest --cov=src --cov-report=term-missing    # カバレッジ付き（src 合計約 88%）
 ```
 
 ## CDK スタックリソース
 
 - **Lambda 関数**: Python 3.12、512 MB、60 秒タイムアウト
+- **バンドル**: CDK が公式 Python 3.12 イメージ上で `pip install` と `src/` のコピーを実行（Docker 必須）
 - **IAM ポリシー**: すべての基盤モデルに対する `bedrock:InvokeModel` + `bedrock:Converse`
 - **IAM ポリシー**（オプション）: クライテリアバケットへの `s3:GetObject`
 - **CloudWatch Logs**: Lambda ランタイムが自動作成
 - **Outputs**: `LambdaFunctionArn`、`LambdaFunctionName`
-
-## ライセンス
-
-MIT
