@@ -28,6 +28,16 @@ logger = Logger(service="llm-judge")
 # Threshold in seconds above which handler duration is logged at INFO.
 _DURATION_LOG_THRESHOLD_SEC = 0.1
 
+# Safety buffer subtracted from Lambda's remaining time before deriving the
+# per-call LLM timeout, to leave room for JSON parsing, logging, and response
+# serialisation before the Lambda runtime hard-stops the invocation.
+_TIMEOUT_SAFETY_BUFFER_SEC = 2
+
+# Minimum remaining Lambda time required to even attempt an evaluation.
+# Below this threshold we fail fast with ValidationError rather than start a
+# call that is certain to time out at the Lambda boundary.
+_MIN_REMAINING_TIME_SEC = 5
+
 
 # ---------------------------------------------------------------------------
 # Exception hierarchy
@@ -205,13 +215,17 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
             },
         )
 
+        per_call_timeout = _resolve_per_call_timeout(
+            context, config.request_timeout, request_id
+        )
+
         result = evaluate(
             prompt=event["prompt"],
             response=event["response"],
             criteria=criteria,
             provider=provider,
             model=judge_model,
-            timeout=config.request_timeout,
+            timeout=per_call_timeout,
             provider_name=provider_name,
             system_prompt=event.get("system_prompt") or None,
             contexts=_normalize_context(event.get("contexts")),
@@ -279,6 +293,63 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _resolve_per_call_timeout(
+    context: LambdaContext,
+    configured_timeout: int,
+    request_id: str | None,
+) -> int:
+    """Derive the per-LLM-call timeout from the Lambda remaining-time budget.
+
+    The evaluation pipeline runs in two wall-time phases: a parallel per-criterion
+    batch followed by a serial summary call. Allocate half of the remaining budget
+    (minus a safety buffer) to each phase, capped by the user-configured timeout.
+
+    Args:
+        context:            AWS Lambda context (may lack get_remaining_time_in_millis
+                            in non-Lambda environments; fall back to ``configured_timeout``).
+        configured_timeout: Upper bound from ``REQUEST_TIMEOUT`` (seconds).
+        request_id:         For structured logging.
+
+    Returns:
+        Per-call timeout in seconds, always ≥ 1.
+
+    Raises:
+        ValidationError: If Lambda has less than ``_MIN_REMAINING_TIME_SEC``
+                         remaining (fail-fast to avoid inevitable timeout).
+    """
+    getter = getattr(context, "get_remaining_time_in_millis", None)
+    if not callable(getter):
+        return configured_timeout
+
+    try:
+        remaining_ms = getter()
+    except Exception:  # pragma: no cover — defensive fallback for non-Lambda runs
+        return configured_timeout
+
+    remaining_sec = remaining_ms / 1000.0
+    if remaining_sec < _MIN_REMAINING_TIME_SEC:
+        raise ValidationError(
+            f"Insufficient Lambda time remaining: {remaining_sec:.1f}s "
+            f"< {_MIN_REMAINING_TIME_SEC}s. Increase the function timeout."
+        )
+
+    # Two phases (parallel batch + summary) share the remaining budget.
+    budget = (remaining_sec - _TIMEOUT_SAFETY_BUFFER_SEC) / 2
+    per_call = max(1, min(configured_timeout, int(budget)))
+
+    if per_call < configured_timeout:
+        logger.info(
+            "Per-call timeout reduced from Lambda remaining time",
+            extra={
+                "configured_timeout_sec": configured_timeout,
+                "per_call_timeout_sec": per_call,
+                "remaining_sec": round(remaining_sec, 1),
+                "request_id": request_id,
+            },
+        )
+    return per_call
 
 
 def _default_model(config, provider_name: str) -> str:
