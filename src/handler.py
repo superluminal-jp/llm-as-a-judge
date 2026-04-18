@@ -225,8 +225,6 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
             "duration_ms": duration_ms,
             "request_id": request_id,
         }
-        if "overall_score" in result:
-            log_extra["overall_score"] = result["overall_score"]
 
         if duration_sec >= _DURATION_LOG_THRESHOLD_SEC:
             logger.info("Evaluation completed", extra=log_extra)
