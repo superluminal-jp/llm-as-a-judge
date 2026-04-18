@@ -31,6 +31,7 @@ def _make_config(
     openai_model: str = "gpt-4o",
     bedrock_model: str = "amazon.nova-premier-v1:0",
     request_timeout: int = 30,
+    max_retries: int = 3,
     default_provider: str = "anthropic",
 ):
     from src.config import Config
@@ -43,6 +44,7 @@ def _make_config(
         openai_model=openai_model,
         bedrock_model=bedrock_model,
         request_timeout=request_timeout,
+        max_retries=max_retries,
         log_level="INFO",
     )
 

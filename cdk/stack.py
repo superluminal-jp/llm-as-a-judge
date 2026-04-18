@@ -2,8 +2,10 @@
 
 Deploys a single Lambda function with:
 - Python 3.12 runtime (``aws_lambda.Runtime.PYTHON_3_12``)
+- ARM64 architecture (Graviton2) for improved price/performance
+- Active X-Ray tracing via Powertools ``Tracer``
 - 512 MB memory, 60-second timeout
-- IAM: ``bedrock:InvokeModel`` on all foundation models
+- IAM: ``bedrock:InvokeModel`` / ``bedrock:Converse`` on all foundation models
 - IAM: ``s3:GetObject`` on the criteria bucket (when ``criteria_bucket_arn``
   CDK context is set)
 - Environment variables sourced from CDK context / CloudFormation parameters
@@ -115,6 +117,11 @@ class LlmJudgeStack(cdk.Stack):
             self,
             "LlmJudgeFunction",
             runtime=lambda_.Runtime.PYTHON_3_12,
+            # Graviton2 (arm64): ~20% better price/performance vs x86_64 for
+            # pure-Python + network-bound workloads. The bundling image below
+            # is pinned to the arm64 variant so C-extension wheels installed
+            # during `pip install` match the Lambda execution architecture.
+            architecture=lambda_.Architecture.ARM_64,
             # Handler path: src.handler module → lambda_handler function.
             # The src/ package is preserved in the bundle so that intra-package
             # imports (from src.config, from src.criteria, …) resolve correctly.
@@ -125,6 +132,7 @@ class LlmJudgeStack(cdk.Stack):
                 "..",
                 bundling=cdk.BundlingOptions(
                     image=lambda_.Runtime.PYTHON_3_12.bundling_image,
+                    platform="linux/arm64",
                     command=[
                         "bash",
                         "-c",
@@ -137,9 +145,11 @@ class LlmJudgeStack(cdk.Stack):
             ),
             memory_size=512,
             timeout=cdk.Duration.seconds(60),
+            tracing=lambda_.Tracing.ACTIVE,
             environment={
                 "DEFAULT_PROVIDER": default_provider,
                 "POWERTOOLS_SERVICE_NAME": "llm-judge",
+                "POWERTOOLS_METRICS_NAMESPACE": "LlmJudge",
                 "LOG_LEVEL": "INFO",
                 # API keys: set these via Lambda console, Secrets Manager
                 # integration, or a separate environment-specific config.
@@ -149,6 +159,7 @@ class LlmJudgeStack(cdk.Stack):
                 # Claude Sonnet 4.6 on Bedrock (anthropic.claude-sonnet-4-6).
                 "BEDROCK_MODEL": "anthropic.claude-sonnet-4-6",
                 "REQUEST_TIMEOUT": "30",
+                "MAX_RETRIES": "3",
             },
             description=(
                 "LLM-as-a-Judge: evaluates LLM responses using a multi-criteria "

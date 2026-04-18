@@ -42,7 +42,7 @@ class AnthropicProvider:
         # across Lambda invocations within the same container.
         self._client = anthropic.Anthropic(
             api_key=config.anthropic_api_key,
-            max_retries=3,
+            max_retries=config.max_retries,
         )
         logger.debug("AnthropicProvider initialised")
 

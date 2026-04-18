@@ -23,6 +23,11 @@ Environment Variables:
                          ap-northeast-1 and ap-northeast-3).
     REQUEST_TIMEOUT:     HTTP request timeout in seconds (integer).
                          Defaults to ``30``.
+    MAX_RETRIES:         Number of retry attempts for transient provider errors
+                         (rate limits, throttling, cross-region profile
+                         transients). Applied by the Anthropic and OpenAI SDKs
+                         and by Bedrock's application-level retry loop.
+                         Defaults to ``3``.
     LOG_LEVEL:           Powertools log level (``DEBUG``, ``INFO``, …).
                          Defaults to ``"INFO"``.
 """
@@ -56,6 +61,7 @@ class Config:
         openai_model:      Default judge model for OpenAI.
         bedrock_model:     Default judge model for Bedrock.
         request_timeout:   HTTP request timeout in seconds.
+        max_retries:       Number of retry attempts on transient provider errors.
         log_level:         Powertools log level string.
     """
 
@@ -66,6 +72,7 @@ class Config:
     openai_model: str
     bedrock_model: str
     request_timeout: int
+    max_retries: int
     log_level: str
 
 
@@ -111,6 +118,13 @@ def _load_config() -> Config:
     except ValueError:
         request_timeout = 30
 
+    try:
+        max_retries = int(os.environ.get("MAX_RETRIES", "3"))
+    except ValueError:
+        max_retries = 3
+    if max_retries < 0:
+        max_retries = 0
+
     return Config(
         default_provider=os.environ.get("DEFAULT_PROVIDER", "bedrock"),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
@@ -119,6 +133,7 @@ def _load_config() -> Config:
         openai_model=os.environ.get("OPENAI_MODEL", "gpt-4o"),
         bedrock_model=os.environ.get("BEDROCK_MODEL", "jp.anthropic.claude-sonnet-4-6"),
         request_timeout=request_timeout,
+        max_retries=max_retries,
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
     )
 

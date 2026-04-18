@@ -42,7 +42,7 @@ class OpenAIProvider:
         # across Lambda invocations within the same container.
         self._client = openai.OpenAI(
             api_key=config.openai_api_key,
-            max_retries=3,
+            max_retries=config.max_retries,
         )
         logger.debug("OpenAIProvider initialised")
 
