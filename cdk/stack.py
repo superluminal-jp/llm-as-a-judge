@@ -157,28 +157,19 @@ class LlmJudgeStack(cdk.Stack):
         )
 
         # -----------------------------------------------------------------
-        # IAM — Bedrock: allow invoking any foundation model
+        # IAM — Bedrock: allow InvokeModel / Converse on foundation models
+        # and cross-region inference profiles (used by Claude on Bedrock).
         # -----------------------------------------------------------------
 
         function.add_to_role_policy(
             iam.PolicyStatement(
-                sid="BedrockInvokeModel",
-                effect=iam.Effect.ALLOW,
-                actions=["bedrock:InvokeModel"],
-                resources=["arn:aws:bedrock:*::foundation-model/*"],
-            )
-        )
-
-        # -----------------------------------------------------------------
-        # IAM — Bedrock Converse API (separate action)
-        # -----------------------------------------------------------------
-
-        function.add_to_role_policy(
-            iam.PolicyStatement(
-                sid="BedrockConverse",
+                sid="BedrockInvokeAndConverse",
                 effect=iam.Effect.ALLOW,
                 actions=["bedrock:InvokeModel", "bedrock:Converse"],
-                resources=["arn:aws:bedrock:*::foundation-model/*"],
+                resources=[
+                    "arn:aws:bedrock:*::foundation-model/*",
+                    "arn:aws:bedrock:*:*:inference-profile/*",
+                ],
             )
         )
 
