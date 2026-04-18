@@ -278,32 +278,38 @@ pytest tests/test_evaluator.py -v
 
 ### クイックデプロイ
 
+CFN スタック名は **`LlmJudgeStack-<environment>`**（例: `LlmJudgeStack-dev`、`LlmJudgeStack-prd`）。dev / prd を同一アカウントに同居させられる。
+
 ```bash
 # 環境変数を設定
 export ANTHROPIC_API_KEY=sk-ant-...   # Anthropic を使う場合
 
-# デプロイ（初回は CDK bootstrap を自動実行）
-./scripts/deploy.sh
+# dev デプロイ（初回は CDK bootstrap を自動実行）
+./scripts/deploy.sh                      # → LlmJudgeStack-dev
 
-# リージョン指定
-./scripts/deploy.sh --region us-east-1   # 既定は ap-northeast-1
+# prd デプロイ
+./scripts/deploy.sh --env prd            # → LlmJudgeStack-prd
+
+# リージョン指定（既定は ap-northeast-1）
+./scripts/deploy.sh --env dev --region us-east-1
 
 # S3 クライテリアバケットアクセスを付与してデプロイ
-CRITERIA_BUCKET_ARN=arn:aws:s3:::my-bucket ./scripts/deploy.sh
+CRITERIA_BUCKET_ARN=arn:aws:s3:::my-bucket ./scripts/deploy.sh --env prd
 ```
 
 ### パラメータファイル
 
-リポジトリ直下の [`config/parameters.json`](config/parameters.json) で `aws_region`・`default_provider`・`criteria_bucket_arn` などを指定する（[`config/README.md`](config/README.md) 参照）。`cdk deploy` の `--context` は同じキーを上書きできる。
+リポジトリ直下の [`config/parameters.json`](config/parameters.json) で `aws_region`・`environment`・`default_provider`・`criteria_bucket_arn` などを指定する（[`config/README.md`](config/README.md) 参照）。`environment` はスタック名 `LlmJudgeStack-<environment>` に直接反映される。`cdk deploy` の `--context` および `scripts/deploy.sh` の `--env` は同じキーを上書きできる。
 
 ### 手動 CDK デプロイ
 
 ```bash
 pip install -r cdk/requirements.txt
 cdk bootstrap
-cdk deploy LlmJudgeStack \
+cdk deploy LlmJudgeStack-dev \
   --app "python3 cdk/app.py" \
   --require-approval never \
+  --context environment=dev \
   --context criteria_bucket_arn=arn:aws:s3:::my-bucket
 ```
 

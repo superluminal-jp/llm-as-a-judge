@@ -1,18 +1,23 @@
 #!/bin/bash
 # deploy.sh — Deploy the LLM-as-a-Judge Lambda function via AWS CDK.
 #
+# The CFN stack name is LlmJudgeStack-<env> (e.g., LlmJudgeStack-dev,
+# LlmJudgeStack-prd) so dev / prd can coexist in the same account.
+#
 # Usage:
-#   ./scripts/deploy.sh [--env dev|prod] [--region REGION]
+#   ./scripts/deploy.sh [--env dev|prd] [--region REGION]
 #
 # Environment Variables (optional — override CDK context defaults):
+#   ENVIRONMENT           dev|prd label (overrides parameters.json `environment`)
 #   AWS_REGION            AWS region (overrides merged config/parameters*.json aws_region)
 #   AWS_ACCOUNT_ID        AWS account ID (used for CDK bootstrap)
 #   CRITERIA_BUCKET_ARN   ARN of the S3 bucket for criteria files
 #
 # Examples:
-#   ./scripts/deploy.sh
-#   ./scripts/deploy.sh --env prod --region ap-northeast-1
-#   CRITERIA_BUCKET_ARN=arn:aws:s3:::my-bucket ./scripts/deploy.sh
+#   ./scripts/deploy.sh                                   # uses parameters.json
+#   ./scripts/deploy.sh --env prd
+#   ./scripts/deploy.sh --env dev --region ap-northeast-1
+#   CRITERIA_BUCKET_ARN=arn:aws:s3:::my-bucket ./scripts/deploy.sh --env prd
 
 set -euo pipefail
 
@@ -23,12 +28,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-ENV="dev"
-if [[ -n "${AWS_REGION:-}" ]]; then
-  REGION="${AWS_REGION}"
-elif [[ -f "${REPO_ROOT}/config/parameters.json" ]] || [[ -f "${REPO_ROOT}/config/parameters.local.json" ]]; then
-  REGION="$(
-    REPO_ROOT="${REPO_ROOT}" python3 <<'PY'
+# Read merged parameters.json + parameters.local.json once.
+read -r FILE_ENV FILE_REGION < <(
+  REPO_ROOT="${REPO_ROOT}" python3 <<'PY'
 import json
 import os
 
@@ -41,16 +43,16 @@ def load(name: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 merged = {**load("parameters.json"), **load("parameters.local.json")}
-print(merged.get("aws_region", "ap-northeast-1"))
+print(merged.get("environment", "dev"), merged.get("aws_region", "ap-northeast-1"))
 PY
-  )"
-else
-  REGION="ap-northeast-1"
-fi
+)
+
+ENV="${ENVIRONMENT:-${FILE_ENV}}"
+REGION="${AWS_REGION:-${FILE_REGION}}"
 CRITERIA_BUCKET_ARN="${CRITERIA_BUCKET_ARN:-}"
 
 # ---------------------------------------------------------------------------
-# Argument parsing
+# Argument parsing (CLI flags take precedence over env vars / parameters file)
 # ---------------------------------------------------------------------------
 
 while [[ $# -gt 0 ]]; do
@@ -65,15 +67,16 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Unknown option: $1" >&2
-      echo "Usage: $0 [--env dev|prod] [--region REGION]" >&2
+      echo "Usage: $0 [--env dev|prd] [--region REGION]" >&2
       exit 1
       ;;
   esac
 done
 
 export AWS_REGION="$REGION"
+STACK_NAME="LlmJudgeStack-${ENV}"
 
-echo "==> Deploying LlmJudgeStack (env=${ENV}, region=${REGION})"
+echo "==> Deploying ${STACK_NAME} (env=${ENV}, region=${REGION})"
 
 # ---------------------------------------------------------------------------
 # Step 1: Verify AWS authentication
@@ -112,7 +115,7 @@ cdk bootstrap "aws://${ACCOUNT_ID}/${REGION}" \
 # Step 4: Build CDK context
 # ---------------------------------------------------------------------------
 
-CDK_CONTEXT_ARGS=()
+CDK_CONTEXT_ARGS=(--context "environment=${ENV}")
 if [[ -n "${CRITERIA_BUCKET_ARN}" ]]; then
   CDK_CONTEXT_ARGS+=(--context "criteria_bucket_arn=${CRITERIA_BUCKET_ARN}")
 fi
@@ -122,11 +125,11 @@ fi
 # ---------------------------------------------------------------------------
 
 echo ""
-echo "==> Deploying LlmJudgeStack..."
-cdk deploy LlmJudgeStack \
+echo "==> Deploying ${STACK_NAME}..."
+cdk deploy "${STACK_NAME}" \
   --require-approval never \
   --app "python3 cdk/app.py" \
-  "${CDK_CONTEXT_ARGS[@]+"${CDK_CONTEXT_ARGS[@]}"}"
+  "${CDK_CONTEXT_ARGS[@]}"
 
 # ---------------------------------------------------------------------------
 # Step 6: Output Lambda ARN
@@ -135,13 +138,14 @@ cdk deploy LlmJudgeStack \
 echo ""
 echo "==> Fetching Lambda function ARN..."
 LAMBDA_ARN=$(aws cloudformation describe-stacks \
-  --stack-name LlmJudgeStack \
+  --stack-name "${STACK_NAME}" \
   --query "Stacks[0].Outputs[?OutputKey=='LambdaFunctionArn'].OutputValue" \
   --output text 2>/dev/null || echo "N/A")
 
 echo ""
 echo "============================================"
 echo "  Deployment complete!"
+echo "  Stack:      ${STACK_NAME}"
 echo "  Lambda ARN: ${LAMBDA_ARN}"
 echo "  Region:     ${REGION}"
 echo "  Env:        ${ENV}"

@@ -65,6 +65,7 @@ pytest -q
 ポイント:
 
 - **シークレット（API キー）は JSON に書かない**。デプロイ後に Lambda 環境変数で設定する。
+- `environment` は CFN スタック名 **`LlmJudgeStack-<environment>`**（例: `LlmJudgeStack-dev`）に直接反映される。`prd` などにすれば同一アカウントに別スタックを並べられる。
 - カスタムクライテリアを S3 から読みたい場合のみ `criteria_bucket_arn` を埋める（後からでも可）。
 - チーム共通設定を汚さずローカルで上書きしたい場合は `config/parameters.local.json` を作成（[詳細](../config/README.md)）。
 
@@ -73,21 +74,20 @@ pytest -q
 ## 4. デプロイ（初回 5〜10 分、2 回目以降 1〜2 分）
 
 ```bash
-./scripts/deploy.sh
+./scripts/deploy.sh                     # → LlmJudgeStack-dev
+./scripts/deploy.sh --env prd           # → LlmJudgeStack-prd
+./scripts/deploy.sh --env dev --region us-east-1
 ```
 
-リージョンを引数で上書きしたい場合:
+`--env` を省略すると `parameters.json` の `environment`（既定 `dev`）が使われる。dev / prd は独立スタックとして同一アカウントに同居可能。
 
-```bash
-./scripts/deploy.sh --region us-east-1
-```
-
-**期待出力**: 末尾に Lambda の ARN が表示される。
+**期待出力**: 末尾にスタック名と Lambda の ARN が表示される。
 
 ```
 ============================================
   Deployment complete!
-  Lambda ARN: arn:aws:lambda:ap-northeast-1:123456789012:function:LlmJudgeStack-...
+  Stack:      LlmJudgeStack-dev
+  Lambda ARN: arn:aws:lambda:ap-northeast-1:123456789012:function:LlmJudgeStack-dev-...
   Region:     ap-northeast-1
   Env:        dev
 ============================================

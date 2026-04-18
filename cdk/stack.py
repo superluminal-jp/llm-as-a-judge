@@ -30,9 +30,17 @@ class LlmJudgeStack(cdk.Stack):
     ``--context`` flags) so that the same stack definition can be reused
     across environments (dev, staging, prod).
 
+    The stack name is ``LlmJudgeStack-<environment>`` (e.g.,
+    ``LlmJudgeStack-dev``, ``LlmJudgeStack-prd``) so multiple environments can
+    coexist in the same account.
+
     Context keys (``--context`` / ``cdk.json``) override ``config/parameters.json``
     when set to a non-empty value:
 
+        environment (str):          Deployment environment label (``dev``,
+                                    ``prd``, etc.). Drives the CFN export name
+                                    and the ``Environment`` tag. Defaults to
+                                    ``"dev"``.
         default_provider (str):     LLM provider used when the Lambda event
                                     does not specify one. Defaults to
                                     ``"bedrock"``.
@@ -50,6 +58,7 @@ class LlmJudgeStack(cdk.Stack):
         scope: Construct,
         construct_id: str,
         *,
+        environment_label: str = "dev",
         default_provider: str | None = None,
         criteria_bucket_arn: str | None = None,
         **kwargs,
@@ -59,13 +68,23 @@ class LlmJudgeStack(cdk.Stack):
         Args:
             scope:        CDK construct scope (the :class:`~aws_cdk.App`).
             construct_id: Logical ID used to identify this stack in
-                          CloudFormation and CDK.
+                          CloudFormation and CDK (typically
+                          ``LlmJudgeStack-<environment>``).
+            environment_label: Environment label (``dev``, ``prd``, etc.) used
+                          for the CFN export name and the ``Environment`` tag.
             default_provider: Optional override from ``config/parameters.json``.
             criteria_bucket_arn: Optional override from ``config/parameters.json``.
             **kwargs:     Additional keyword arguments forwarded to
                           :class:`~aws_cdk.Stack`.
         """
         super().__init__(scope, construct_id, **kwargs)
+
+        env_ctx = self.node.try_get_context("environment")
+        if env_ctx:
+            environment_label = str(env_ctx).strip() or environment_label
+
+        cdk.Tags.of(self).add("Environment", environment_label)
+        cdk.Tags.of(self).add("Application", "llm-as-a-judge")
 
         def _first_non_empty(*vals: object) -> str | None:
             for v in vals:
@@ -186,7 +205,7 @@ class LlmJudgeStack(cdk.Stack):
             "LambdaFunctionArn",
             value=function.function_arn,
             description="ARN of the LLM-as-a-Judge Lambda function.",
-            export_name="LlmJudgeFunctionArn",
+            export_name=f"LlmJudgeFunctionArn-{environment_label}",
         )
 
         cdk.CfnOutput(

@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """CDK application entry point for LLM-as-a-Judge.
 
-Instantiates the :class:`~cdk.stack.LlmJudgeStack` and synthesises the
-CloudFormation template. Run via::
+Instantiates one :class:`~cdk.stack.LlmJudgeStack` per environment. The CFN
+stack name is ``LlmJudgeStack-<environment>`` (e.g., ``LlmJudgeStack-dev``,
+``LlmJudgeStack-prd``) so dev / prd can coexist in the same AWS account.
+
+Run via::
 
     cdk synth
-    cdk deploy LlmJudgeStack
+    cdk deploy LlmJudgeStack-dev                        # uses parameters.json default
+    cdk deploy LlmJudgeStack-prd --context environment=prd
 
-Defaults for ``default_provider`` and ``criteria_bucket_arn`` are read from
-``config/parameters.json``, optionally merged with ``config/parameters.local.json``
-(same keys override). Command-line ``--context`` / CDK context then take
-precedence in the stack when non-empty.
+Defaults for ``environment``, ``default_provider``, and ``criteria_bucket_arn``
+are read from ``config/parameters.json``, optionally merged with
+``config/parameters.local.json`` (same keys override). Command-line
+``--context`` then takes precedence in the stack when non-empty.
 
 See ``config/README.md`` for the parameter file schema.
 """
@@ -55,10 +59,15 @@ def _load_parameters() -> dict[str, str]:
 app = cdk.App()
 _params = _load_parameters()
 
+# Resolve environment label: CDK context > parameters file > "dev".
+_env_ctx = app.node.try_get_context("environment")
+_environment = (str(_env_ctx).strip() if _env_ctx else "") or _params.get("environment", "dev").strip() or "dev"
+
 LlmJudgeStack(
     app,
-    "LlmJudgeStack",
-    description="LLM-as-a-Judge evaluation Lambda with multi-provider support.",
+    f"LlmJudgeStack-{_environment}",
+    description=f"LLM-as-a-Judge evaluation Lambda ({_environment}).",
+    environment_label=_environment,
     default_provider=_params.get("default_provider"),
     criteria_bucket_arn=_params.get("criteria_bucket_arn"),
 )
