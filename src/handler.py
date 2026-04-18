@@ -72,6 +72,21 @@ _SUPPORTED_PROVIDERS = frozenset({"anthropic", "openai", "bedrock"})
 
 
 # ---------------------------------------------------------------------------
+# Input size limits (bytes, UTF-8)
+# ---------------------------------------------------------------------------
+#
+# Caps protect against runaway prompt tokens / memory use. Values chosen to
+# comfortably fit the largest realistic judge inputs while staying well under
+# Lambda's 6 MB synchronous payload limit and provider token ceilings.
+
+_MAX_PROMPT_BYTES = 64 * 1024            # 64 KB
+_MAX_RESPONSE_BYTES = 128 * 1024         # 128 KB (responses can be longer)
+_MAX_SYSTEM_PROMPT_BYTES = 16 * 1024     # 16 KB
+_MAX_CONTEXT_ITEM_BYTES = 64 * 1024      # 64 KB per item
+_MAX_CONTEXT_ITEMS = 20
+
+
+# ---------------------------------------------------------------------------
 # Input validation helpers
 # ---------------------------------------------------------------------------
 
@@ -97,27 +112,43 @@ def _normalize_context(value: object) -> list[str] | None:
     return filtered if filtered else None
 
 
+def _check_size(field: str, value: str, limit: int) -> None:
+    """Raise ValidationError if the UTF-8 byte length of ``value`` exceeds ``limit``."""
+    size = len(value.encode("utf-8"))
+    if size > limit:
+        raise ValidationError(
+            f"Event field '{field}' exceeds the {limit}-byte limit ({size} bytes)."
+        )
+
+
 def _validate_event(event: dict) -> None:
-    """Validate that mandatory event fields are present and non-empty.
+    """Validate that mandatory event fields are present, well-typed, and bounded.
 
     Args:
         event: Raw Lambda invocation event dict.
 
     Raises:
-        ValidationError: If ``prompt`` or ``response`` is absent or empty.
+        ValidationError: If a required field is absent, has the wrong type,
+            or exceeds its size limit.
     """
-    for field in ("prompt", "response"):
+    for field, limit in (
+        ("prompt", _MAX_PROMPT_BYTES),
+        ("response", _MAX_RESPONSE_BYTES),
+    ):
         value = event.get(field)
         if not value or not isinstance(value, str) or not value.strip():
             raise ValidationError(
                 f"Event field '{field}' is required and must be a non-empty string."
             )
+        _check_size(field, value, limit)
 
     system_prompt = event.get("system_prompt")
-    if system_prompt is not None and not isinstance(system_prompt, str):
-        raise ValidationError(
-            "Event field 'system_prompt' must be a string when provided."
-        )
+    if system_prompt is not None:
+        if not isinstance(system_prompt, str):
+            raise ValidationError(
+                "Event field 'system_prompt' must be a string when provided."
+            )
+        _check_size("system_prompt", system_prompt, _MAX_SYSTEM_PROMPT_BYTES)
 
     contexts = event.get("contexts")
     if contexts is not None:
@@ -127,7 +158,16 @@ def _validate_event(event: dict) -> None:
                     "Event field 'contexts' must be a list of strings; "
                     "all elements must be strings."
                 )
-        elif not isinstance(contexts, str):
+            if len(contexts) > _MAX_CONTEXT_ITEMS:
+                raise ValidationError(
+                    f"Event field 'contexts' has {len(contexts)} items; "
+                    f"limit is {_MAX_CONTEXT_ITEMS}."
+                )
+            for i, item in enumerate(contexts):
+                _check_size(f"contexts[{i}]", item, _MAX_CONTEXT_ITEM_BYTES)
+        elif isinstance(contexts, str):
+            _check_size("contexts", contexts, _MAX_CONTEXT_ITEM_BYTES)
+        else:
             raise ValidationError(
                 "Event field 'contexts' must be a string or list of strings when provided."
             )
