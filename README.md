@@ -116,7 +116,7 @@ docs/
 | `response` | `string` | ✅ | — | 評価対象 LLM の回答 |
 | `provider` | `string` | ✗ | `DEFAULT_PROVIDER` 環境変数 | `anthropic` / `openai` / `bedrock` |
 | `judge_model` | `string` | ✗ | プロバイダー別デフォルトモデル | ジャッジに使用するモデル ID |
-| `criteria_file` | `string` | ✗ | デフォルト balanced クライテリア | S3 URI（例: `s3://bucket/criteria.json`） |
+| `criteria_file` | `string` | ✗ | デフォルト balanced クライテリア | **事前に S3 にアップロード**した JSON の URI（例: `s3://bucket/criteria.json`）。ローカルパスは不可 |
 | `system_prompt` | `string` | ✗ | `null` | 評価対象 LLM に与えたシステムプロンプト。ジャッジプロンプトに挿入され、指示追従性の評価に利用される |
 | `contexts` | `string` または `string[]` | ✗ | `null` | 評価時に参照する追加コンテキスト（RAG 取得ドキュメント等）。複数指定時は `[1]`, `[2]` 番号付きで挿入される |
 
@@ -156,7 +156,12 @@ docs/
 
 ## クライテリアファイル（S3）
 
-S3 上の JSON ファイルでカスタム評価クライテリアを定義できる。
+カスタム評価クライテリアは **S3 上の JSON ファイル** として配置し、Lambda イベントの `criteria_file` に S3 URI（例: `s3://my-bucket/criteria/custom.json`）を渡して使用する。リポジトリ直下の `criteria/*.json` は編集・レビュー・バージョン管理用であり、**実行時は必ず S3 にアップロードしたオブジェクトが参照される**（ローカルパスは指定不可）。`criteria_file` を省略した場合のみ、組み込みの Balanced クライテリア（4 軸）が使われる。
+
+```bash
+# アップロード例
+aws s3 cp criteria/default.json s3://my-bucket/criteria/default.json
+```
 
 ### 基本形式
 

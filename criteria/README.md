@@ -3,7 +3,14 @@
 LLM-as-a-Judge システムで使用する評価クライテリア（審査基準）の設定ファイル群。より広いドキュメント索引は [docs/README.md](../docs/README.md)。
 
 
-S3 にアップロードして Lambda イベントの `criteria_file` で参照する。リポジトリ内の JSON は編集・レビュー・バージョン管理用（実行時は必ず S3 上のオブジェクトを指す）。
+**クライテリアは使用前に S3 へアップロードが必須**。Lambda はリポジトリ内の `criteria/*.json` を直接読まず、イベントの `criteria_file` に渡された **S3 URI**（例: `s3://my-bucket/criteria/default.json`）からのみ取得する。リポジトリ内の JSON は編集・レビュー・バージョン管理用。
+
+```bash
+# 例: default.json を S3 にアップロード
+aws s3 cp criteria/default.json s3://my-bucket/criteria/default.json
+```
+
+Lambda 実行ロールに対象バケットの `s3:GetObject` が必要（[`config/parameters.json`](../config/parameters.json) の `criteria_bucket_arn` または `CRITERIA_BUCKET_ARN=...` 環境変数で `scripts/deploy.sh` 経由付与）。
 
 ## ファイル一覧
 

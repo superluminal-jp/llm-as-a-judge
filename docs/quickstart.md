@@ -143,6 +143,30 @@ aws lambda invoke \
 
 ---
 
+## 7. （任意）カスタムクライテリアを使う
+
+組み込みの Balanced 以外のクライテリアを使うときは、**JSON を S3 にアップロード**してから Lambda イベントの `criteria_file` に S3 URI を渡す。リポジトリ直下の `criteria/*.json` は編集・バージョン管理用で、Lambda はローカルパスを読まない。
+
+```bash
+# 1) リポジトリの JSON（または独自ファイル）を S3 にアップロード
+aws s3 cp criteria/default.json s3://my-bucket/criteria/default.json
+
+# 2) Lambda にバケット読み取り権限を付与（初回のみ）
+CRITERIA_BUCKET_ARN=arn:aws:s3:::my-bucket ./scripts/deploy.sh
+
+# 3) criteria_file 指定で呼び出し
+aws lambda invoke \
+  --function-name <関数名> \
+  --region <リージョン> \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"prompt":"...","response":"...","provider":"bedrock","criteria_file":"s3://my-bucket/criteria/default.json"}' \
+  result.json && cat result.json
+```
+
+カスタムクライテリアの設計指針は [criteria/README.md](../criteria/README.md) を参照。
+
+---
+
 ## よくあるつまずき
 
 | 症状 | 対処 |
@@ -150,7 +174,7 @@ aws lambda invoke \
 | `aws sts get-caller-identity` が失敗 | `aws configure` で認証情報を設定、または `AWS_PROFILE` を確認 |
 | `cdk synth` / `deploy` が Docker エラー | Docker Desktop / `dockerd` を起動 |
 | `AccessDeniedException`（Bedrock） | リージョンでモデルが有効化されているか、クロスリージョン推論プロファイルが必要か確認 |
-| `CriteriaLoadError` | S3 URI 形式 `s3://bucket/key` と `s3:GetObject` 権限を確認 |
+| `CriteriaLoadError` | クライテリア JSON が S3 にアップロード済みか、URI 形式 `s3://bucket/key` が正しいか、Lambda ロールに `s3:GetObject` があるか確認 |
 
 詳しくは [troubleshooting.md](troubleshooting.md) 参照。
 

@@ -47,7 +47,7 @@
     "criteria_file": {
       "type": "string",
       "pattern": "^s3://[a-zA-Z0-9._-]+/.+\\.json$",
-      "description": "S3 URI to a JSON file defining evaluation criteria. If omitted, default criteria are used.",
+      "description": "S3 URI to a JSON file defining evaluation criteria. The object must be uploaded to S3 before invocation; local paths are not supported. If omitted, default criteria are used.",
       "examples": ["s3://my-bucket/criteria/accuracy.json"]
     },
     "provider": {

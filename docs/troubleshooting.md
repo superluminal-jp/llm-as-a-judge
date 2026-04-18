@@ -16,9 +16,11 @@
 
 ## S3 クライテリア
 
+カスタムクライテリアは **使用前に S3 へアップロードが必須**。リポジトリ内の `criteria/*.json` を直接 Lambda が読むことはない（イベントの `criteria_file` には必ず `s3://...` を指定する）。
+
 | 現象 | 確認すること |
 |------|----------------|
-| `CriteriaLoadError`（オブジェクトなし） | バケット・キー・URI 形式 `s3://bucket/key`。Lambda ロールに `s3:GetObject` があるか。 |
+| `CriteriaLoadError`（オブジェクトなし） | `aws s3 cp` 等でアップロード済みか。バケット・キー・URI 形式 `s3://bucket/key`、Lambda ロールに `s3:GetObject` があるか。 |
 | `CriteriaLoadError`（JSON 不正） | `criteria-file` 契約に合うか（[schemas.md](schemas.md)）。 |
 
 ## プロバイダー（Anthropic / OpenAI）
