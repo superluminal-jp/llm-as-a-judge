@@ -15,7 +15,8 @@ Modules:
 
 import time
 
-from aws_lambda_powertools import Logger
+from aws_lambda_powertools import Logger, Metrics, Tracer
+from aws_lambda_powertools.metrics import MetricUnit
 from aws_lambda_powertools.utilities.typing import LambdaContext
 
 from src.config import get_config, validate_for_provider
@@ -24,6 +25,8 @@ from src.evaluator import evaluate
 from src.providers import get_provider
 
 logger = Logger(service="llm-judge")
+tracer = Tracer(service="llm-judge")
+metrics = Metrics(namespace="LlmJudge", service="llm-judge")
 
 # Threshold in seconds above which handler duration is logged at INFO.
 _DURATION_LOG_THRESHOLD_SEC = 0.1
@@ -192,6 +195,8 @@ def _validate_event(event: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+@metrics.log_metrics(capture_cold_start_metric=True)
+@tracer.capture_lambda_handler
 @logger.inject_lambda_context(log_event=False)
 def lambda_handler(event: dict, context: LambdaContext) -> dict:
     """Evaluate an LLM response using a judge LLM.
@@ -280,6 +285,17 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
             "request_id": request_id,
         }
 
+        metrics.add_dimension(name="Provider", value=result["provider"])
+        metrics.add_metric(name="EvaluationSuccess", unit=MetricUnit.Count, value=1)
+        metrics.add_metric(
+            name="EvaluationDuration", unit=MetricUnit.Milliseconds, value=duration_ms
+        )
+        metrics.add_metric(
+            name="CriteriaCount",
+            unit=MetricUnit.Count,
+            value=len(result.get("criterion_scores", {})),
+        )
+
         if duration_sec >= _DURATION_LOG_THRESHOLD_SEC:
             logger.info("Evaluation completed", extra=log_extra)
         else:
@@ -289,6 +305,10 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
 
     except (ValidationError, ConfigurationError, ProviderError, CriteriaLoadError) as exc:
         duration_ms = round((time.perf_counter() - start_time) * 1000)
+        metrics.add_metric(name="EvaluationFailure", unit=MetricUnit.Count, value=1)
+        metrics.add_metric(
+            name=f"Error_{type(exc).__name__}", unit=MetricUnit.Count, value=1
+        )
         logger.error(
             "Evaluation failed",
             extra={
@@ -303,6 +323,7 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
 
     except LlmJudgeError as exc:
         duration_ms = round((time.perf_counter() - start_time) * 1000)
+        metrics.add_metric(name="EvaluationFailure", unit=MetricUnit.Count, value=1)
         logger.error(
             "Evaluation failed (unknown LlmJudgeError)",
             extra={
@@ -317,6 +338,7 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
 
     except Exception as exc:
         duration_ms = round((time.perf_counter() - start_time) * 1000)
+        metrics.add_metric(name="UnhandledError", unit=MetricUnit.Count, value=1)
         logger.critical(
             "Unexpected error in Lambda handler",
             extra={
