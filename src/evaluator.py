@@ -30,6 +30,11 @@ logger = Logger(service="llm-judge")
 # Threshold in milliseconds above which LLM call duration is logged at INFO.
 _LLM_DURATION_LOG_THRESHOLD_MS = 100
 
+# Upper bound on concurrent criterion evaluations. Large criteria files can
+# otherwise spawn one thread per criterion, risking provider rate limits and
+# memory pressure inside the 512 MB Lambda container.
+_MAX_PARALLEL_CRITERIA = 8
+
 # ---------------------------------------------------------------------------
 # Context rendering helpers
 # ---------------------------------------------------------------------------
@@ -418,7 +423,8 @@ def evaluate(
     criterion_list = criteria.criteria
     order = {c.name: i for i, c in enumerate(criterion_list)}
 
-    with ThreadPoolExecutor(max_workers=len(criterion_list)) as executor:
+    workers = min(len(criterion_list), _MAX_PARALLEL_CRITERIA)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {
             executor.submit(
                 _evaluate_one_criterion,
