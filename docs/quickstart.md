@@ -51,7 +51,7 @@ pytest -q
 
 ## 3. デプロイパラメータの最小設定（1 分）
 
-[`config/parameters.json`](../config/parameters.json) を開き、**`aws_region`** をデプロイ先に合わせる。
+[`config/parameters.json`](../config/parameters.json) を開き、必要なら **`aws_region`** をデプロイ先に合わせる（既定は `ap-northeast-1`）。
 
 ```json
 {
@@ -79,7 +79,7 @@ pytest -q
 リージョンを引数で上書きしたい場合:
 
 ```bash
-./scripts/deploy.sh --region ap-northeast-1
+./scripts/deploy.sh --region us-east-1
 ```
 
 **期待出力**: 末尾に Lambda の ARN が表示される。

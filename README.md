@@ -281,7 +281,7 @@ export ANTHROPIC_API_KEY=sk-ant-...   # Anthropic を使う場合
 ./scripts/deploy.sh
 
 # リージョン指定
-./scripts/deploy.sh --region us-east-1
+./scripts/deploy.sh --region us-east-1   # 既定は ap-northeast-1
 
 # S3 クライテリアバケットアクセスを付与してデプロイ
 CRITERIA_BUCKET_ARN=arn:aws:s3:::my-bucket ./scripts/deploy.sh

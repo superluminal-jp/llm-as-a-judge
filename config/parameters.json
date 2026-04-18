@@ -1,5 +1,5 @@
 {
-  "aws_region": "us-east-1",
+  "aws_region": "ap-northeast-1",
   "environment": "dev",
   "default_provider": "bedrock",
   "criteria_bucket_arn": ""

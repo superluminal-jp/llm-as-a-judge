@@ -41,11 +41,11 @@ def load(name: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 merged = {**load("parameters.json"), **load("parameters.local.json")}
-print(merged.get("aws_region", "us-east-1"))
+print(merged.get("aws_region", "ap-northeast-1"))
 PY
   )"
 else
-  REGION="us-east-1"
+  REGION="ap-northeast-1"
 fi
 CRITERIA_BUCKET_ARN="${CRITERIA_BUCKET_ARN:-}"
 
