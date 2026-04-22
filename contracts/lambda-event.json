@@ -1,0 +1,108 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LlmJudge Lambda Event",
+  "description": "Input event for the LLM-as-a-Judge Lambda. At least one of prompt or response must be a non-empty string after trim (enforced in src/handler.py). Field name `contexts` matches src/handler.py (plural).",
+  "type": "object",
+  "properties": {
+    "prompt": {
+      "type": "string",
+      "description": "Text in the prompt role (LLM user message or arbitrary prose). Empty or whitespace-only is treated as absent if the response role is present."
+    },
+    "response": {
+      "type": "string",
+      "description": "Text in the response role (model output or arbitrary prose). Empty or whitespace-only is treated as absent if the prompt role is present."
+    },
+    "prompt_descriptor": {
+      "type": "string",
+      "maxLength": 256,
+      "description": "Optional free-form operator label for the prompt-role text (framing only). Disallowed ASCII control characters except tab/newline/CR are rejected in code."
+    },
+    "response_descriptor": {
+      "type": "string",
+      "maxLength": 256,
+      "description": "Optional free-form operator label for the response-role text (framing only)."
+    },
+    "system_prompt": {
+      "type": "string",
+      "description": "System-level instructions given to the evaluated LLM before the conversation (e.g., persona, language, behavioral constraints). Empty string is treated as absent.",
+      "examples": [
+        "You are a helpful customer service agent for Acme Corp. Always respond in polite Japanese.",
+        "You are an expert Python developer. Answer only with code and brief explanations."
+      ]
+    },
+    "contexts": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "A single additional reference item. Empty string is treated as absent."
+        },
+        {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Multiple reference items (e.g., several retrieved documents). Each item is rendered as a numbered sub-section in the judge prompt. Empty strings within the list are filtered out."
+        }
+      ],
+      "description": "Additional reference material for evaluation (RAG documents, etc.). Accepts a single string or a list of strings.",
+      "examples": [
+        "Retrieved document: 'The return policy allows returns within 30 days of purchase with a valid receipt.'",
+        [
+          "Document 1: 'The return policy allows returns within 30 days.'",
+          "Document 2: 'Items must be unused and in original packaging.'"
+        ]
+      ]
+    },
+    "criteria_file": {
+      "type": "string",
+      "pattern": "^s3://[a-zA-Z0-9._-]+/.+\\.json$",
+      "description": "S3 URI to a JSON file defining evaluation criteria. If omitted, default criteria are used.",
+      "examples": ["s3://my-bucket/criteria/accuracy.json"]
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["anthropic", "openai", "bedrock"],
+      "description": "LLM provider to use as judge. Defaults to DEFAULT_PROVIDER env var."
+    },
+    "judge_model": {
+      "type": "string",
+      "description": "Specific model name to use. Defaults to provider-specific env var (ANTHROPIC_MODEL, etc.)"
+    }
+  },
+  "additionalProperties": false,
+  "anyOf": [
+    {
+      "properties": { "prompt": { "type": "string", "minLength": 1 } },
+      "required": ["prompt"]
+    },
+    {
+      "properties": { "response": { "type": "string", "minLength": 1 } },
+      "required": ["response"]
+    }
+  ],
+  "examples": [
+    {
+      "prompt": "What is machine learning?",
+      "response": "Machine learning is a subset of AI...",
+      "provider": "anthropic"
+    },
+    {
+      "prompt": "What is our return policy?",
+      "response": "You can return items within 30 days.",
+      "system_prompt": "You are a customer service agent for Acme Corp. Always respond in polite Japanese.",
+      "contexts": [
+        "The return policy allows returns within 30 days of purchase with a valid receipt.",
+        "Items must be unused and in original packaging."
+      ],
+      "provider": "bedrock",
+      "judge_model": "amazon.nova-lite-v1:0"
+    },
+    {
+      "prompt": "Draft policy text only — no assistant reply yet.",
+      "response": ""
+    },
+    {
+      "prompt": "",
+      "response": "Standalone paragraph to score for toxicity.",
+      "response_descriptor": "customer email excerpt"
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+{
+  "name": "Default Evaluation Configuration",
+  "description": "Default configuration for comprehensive content evaluation",
+  "criteria": [
+    {
+      "name": "accuracy",
+      "description": "Factual correctness and truthfulness of the response",
+      "evaluation_prompt": "Evaluate the factual accuracy of the response. Are the claims correct, well-supported, and verifiable? Consider the reliability of sources and evidence provided.",
+      "evaluation_steps": [
+        "Are all factual claims in the response verifiable and supported by evidence?",
+        "Does the response contain any contradictions or internal inconsistencies?",
+        "Does the response avoid presenting speculation or opinion as established fact?"
+      ],
+      "score_descriptors": {
+        "1": "Contains major factual errors or misinformation",
+        "2": "Some factual inaccuracies present",
+        "3": "Mostly accurate with minor errors",
+        "4": "Accurate with no significant factual issues",
+        "5": "Completely accurate and well-supported with evidence"
+      }
+    },
+    {
+      "name": "completeness",
+      "description": "Thoroughness and comprehensiveness of coverage",
+      "evaluation_prompt": "Assess how completely the response addresses all aspects of the original question or prompt. Does it cover all necessary points with appropriate depth?",
+      "evaluation_steps": [
+        "Does the response address all distinct aspects or sub-questions in the original prompt?",
+        "Are there important omissions that would significantly impact the usefulness of the answer?",
+        "Is the depth of coverage appropriate and proportional for each aspect?"
+      ],
+      "score_descriptors": {
+        "1": "Addresses very few aspects of the question",
+        "2": "Covers some but misses important aspects",
+        "3": "Addresses most aspects adequately",
+        "4": "Comprehensive coverage with minor gaps",
+        "5": "Thoroughly addresses all aspects with appropriate depth"
+      }
+    },
+    {
+      "name": "relevance",
+      "description": "Relevance to the original prompt or question",
+      "evaluation_prompt": "Assess how relevant the response is to the original question or prompt. Does it stay on topic and directly address what was asked?",
+      "evaluation_steps": [
+        "Does the response directly address what was asked in the original prompt?",
+        "Are there significant tangents or off-topic sections that dilute relevance?",
+        "Is the scope of the response appropriately matched to the scope of the question?"
+      ],
+      "score_descriptors": {
+        "1": "Largely irrelevant or off-topic",
+        "2": "Somewhat relevant but with significant tangents",
+        "3": "Generally relevant with minor deviations",
+        "4": "Highly relevant and on-topic",
+        "5": "Perfectly relevant and directly addresses the prompt"
+      }
+    },
+    {
+      "name": "clarity",
+      "description": "Clarity of expression and ease of understanding",
+      "evaluation_prompt": "Evaluate the clarity and understandability of the response. Is it well-articulated, logically structured, and easy to follow?",
+      "evaluation_steps": [
+        "Is the response logically structured with a clear flow of ideas?",
+        "Are there any ambiguous statements or unexplained jargon that impede understanding?",
+        "Is sentence complexity appropriate — neither unnecessarily terse nor overly convoluted?"
+      ],
+      "score_descriptors": {
+        "1": "Confusing, unclear, or difficult to understand",
+        "2": "Somewhat unclear with areas of confusion",
+        "3": "Generally clear with minor unclear points",
+        "4": "Clear and well-articulated throughout",
+        "5": "Exceptionally clear, concise, and well-explained"
+      }
+    },
+    {
+      "name": "helpfulness",
+      "description": "Practical value and usefulness to the reader",
+      "evaluation_prompt": "Evaluate how helpful and useful this response would be for someone seeking this information. Does it provide actionable insights or valuable knowledge?",
+      "evaluation_steps": [
+        "Does the response provide actionable information or concrete next steps the reader can use?",
+        "Does it anticipate and address likely follow-up questions or edge cases?",
+        "Is the response calibrated to the reader's apparent level of expertise?"
+      ],
+      "score_descriptors": {
+        "1": "Not helpful or potentially misleading",
+        "2": "Limited helpfulness",
+        "3": "Moderately helpful",
+        "4": "Very helpful and useful",
+        "5": "Exceptionally helpful with actionable insights"
+      }
+    },
+    {
+      "name": "coherence",
+      "description": "Logical flow and consistency of ideas",
+      "evaluation_prompt": "Assess the logical flow and coherence of ideas in the response. Are the arguments well-structured and internally consistent?",
+      "evaluation_steps": [
+        "Do the ideas in the response connect logically from one to the next?",
+        "Are there any contradictions or claims that undermine earlier statements?",
+        "Does the response maintain a consistent perspective or argument throughout?"
+      ],
+      "score_descriptors": {
+        "1": "Incoherent or contradictory",
+        "2": "Some logical inconsistencies",
+        "3": "Generally coherent with minor issues",
+        "4": "Logically consistent and well-structured",
+        "5": "Perfectly coherent with excellent logical flow"
+      }
+    },
+    {
+      "name": "appropriateness",
+      "description": "Suitability of tone, style, and content for academic context",
+      "evaluation_prompt": "Evaluate whether the tone, style, and content are appropriate for an academic context. Is it professional, scholarly, and suitable for academic discourse?",
+      "evaluation_steps": [
+        "Is the tone formal and professional, free of colloquialisms or casual language?",
+        "Does the content meet scholarly standards (e.g., citation practice, objective framing)?",
+        "Is the style suited to academic discourse without being unnecessarily pedantic?"
+      ],
+      "score_descriptors": {
+        "1": "Inappropriate tone or content for academic context",
+        "2": "Somewhat inappropriate for academic context",
+        "3": "Generally appropriate",
+        "4": "Well-suited for academic context",
+        "5": "Perfectly appropriate and well-calibrated for academic use"
+      }
+    }
+  ]
+}

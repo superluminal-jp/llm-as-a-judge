@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LlmJudge Lambda Response",
+  "description": "Success response from the LLM-as-a-Judge Lambda. criterion_scores lists numeric scores only for criteria with assessability \"assessed\".",
+  "type": "object",
+  "required": [
+    "criterion_scores",
+    "criterion_reasoning",
+    "criterion_assessability",
+    "reasoning",
+    "judge_model",
+    "provider"
+  ],
+  "properties": {
+    "overall_score": {
+      "type": "number",
+      "minimum": 1.0,
+      "maximum": 5.0,
+      "description": "Weighted average score across all criteria. Present only in single-call evaluation; omitted in parallel (per-criterion) mode where no aggregation is applied."
+    },
+    "criterion_scores": {
+      "type": "object",
+      "description": "Per-criterion scores (1–5) keyed by criterion name. Keys appear only for criteria with criterion_assessability \"assessed\"; may be empty if none were assessed.",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 5
+      },
+      "examples": [
+        {"accuracy": 4.5, "clarity": 3.0, "helpfulness": 4.0}
+      ]
+    },
+    "criterion_reasoning": {
+      "type": "object",
+      "description": "Per-criterion reasoning keyed by criterion name. When evaluation_steps are defined, each value may include numbered step answers followed by a final summary.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "criterion_assessability": {
+      "type": "object",
+      "description": "Per-criterion machine-readable assessability: assessed or not_assessable.",
+      "additionalProperties": {
+        "type": "string",
+        "enum": ["assessed", "not_assessable"]
+      }
+    },
+    "reasoning": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Overall evaluation summary (e.g. Japanese 総評) from the judge LLM"
+    },
+    "judge_model": {
+      "type": "string",
+      "description": "The model name used as judge"
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["anthropic", "openai", "bedrock"],
+      "description": "The LLM provider used"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "criterion_scores": {
+        "accuracy": 4.5,
+        "clarity": 4.0,
+        "helpfulness": 4.0
+      },
+      "criterion_reasoning": {
+        "accuracy": "Solid factual grounding.",
+        "clarity": "Well structured.",
+        "helpfulness": "Addresses the question."
+      },
+      "criterion_assessability": {
+        "accuracy": "assessed",
+        "clarity": "assessed",
+        "helpfulness": "assessed"
+      },
+      "reasoning": "The response demonstrates strong factual accuracy and is clearly written...",
+      "judge_model": "claude-sonnet-4-20250514",
+      "provider": "anthropic"
+    }
+  ]
+}
