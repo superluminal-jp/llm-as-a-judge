@@ -4,16 +4,29 @@ All settings are read from environment variables at module import time (cold sta
 and cached as an immutable :class:`Config` dataclass for the lifetime of the
 Lambda container.
 
+API keys are **not** expected to live in environment variables in a deployed
+stack. The CDK stack provisions a Secrets Manager secret holding a JSON object
+with ``ANTHROPIC_API_KEY`` and ``OPENAI_API_KEY`` and passes its name through
+``API_KEYS_SECRET_NAME``. :func:`get_api_key` resolves keys lazily — environment
+variable first (convenient for local development and tests), then the secret —
+and Powertools caches the fetched secret in memory for
+``POWERTOOLS_PARAMETERS_MAX_AGE`` seconds (300 by default), so a warm container
+does not call Secrets Manager on every invocation.
+
+Bedrock needs no key at all: it authenticates through the Lambda execution role.
+The secret is therefore never read when running Bedrock-only.
+
 Environment Variables:
     DEFAULT_PROVIDER:    LLM provider used when the event does not specify one.
                          One of ``anthropic``, ``openai``, or ``bedrock``.
                          Defaults to ``"bedrock"``.
-    ANTHROPIC_API_KEY:   API key for Anthropic. Required when provider is
-                         ``"anthropic"``.
+    API_KEYS_SECRET_NAME: Name of the Secrets Manager secret holding a JSON
+                         object with ``ANTHROPIC_API_KEY`` / ``OPENAI_API_KEY``.
+                         Empty in local development.
+    ANTHROPIC_API_KEY:   API key for Anthropic. Overrides the secret when set.
     ANTHROPIC_MODEL:     Judge model for Anthropic.
                          Defaults to ``"claude-sonnet-4-6"``.
-    OPENAI_API_KEY:      API key for OpenAI. Required when provider is
-                         ``"openai"``.
+    OPENAI_API_KEY:      API key for OpenAI. Overrides the secret when set.
     OPENAI_MODEL:        Judge model for OpenAI.
                          Defaults to ``"gpt-4o"``.
     BEDROCK_MODEL:       Judge model for Bedrock (no API key required; Lambda
@@ -21,8 +34,10 @@ Environment Variables:
                          Defaults to ``"jp.anthropic.claude-sonnet-4-6"``
                          (JP cross-region inference profile; routes to
                          ap-northeast-1 and ap-northeast-3).
-    REQUEST_TIMEOUT:     HTTP request timeout in seconds (integer).
+    REQUEST_TIMEOUT:     HTTP/Bedrock request timeout in seconds (integer).
                          Defaults to ``30``.
+    MAX_PARALLEL_CRITERIA: Upper bound on concurrent judge LLM calls within a
+                         single invocation. Defaults to ``5``.
     LOG_LEVEL:           Powertools log level (``DEBUG``, ``INFO``, …).
                          Defaults to ``"INFO"``.
 """
@@ -35,6 +50,13 @@ from dataclasses import dataclass
 from aws_lambda_powertools import Logger
 
 logger = Logger(service="llm-judge")
+
+# Environment variable holding the API key for each provider, checked before
+# falling back to Secrets Manager. Bedrock is absent: it uses IAM auth.
+_API_KEY_ENV_VARS = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+}
 
 # ---------------------------------------------------------------------------
 # Config dataclass
@@ -50,13 +72,18 @@ class Config:
 
     Attributes:
         default_provider:  LLM provider to use when the event omits ``provider``.
-        anthropic_api_key: Anthropic API key (empty string when not configured).
+        anthropic_api_key: Anthropic API key read from the environment (empty
+                           when the key lives in Secrets Manager instead).
         anthropic_model:   Default judge model for Anthropic.
-        openai_api_key:    OpenAI API key (empty string when not configured).
+        openai_api_key:    OpenAI API key read from the environment (empty when
+                           the key lives in Secrets Manager instead).
         openai_model:      Default judge model for OpenAI.
         bedrock_model:     Default judge model for Bedrock.
-        request_timeout:   HTTP request timeout in seconds.
+        request_timeout:   HTTP/Bedrock request timeout in seconds.
         log_level:         Powertools log level string.
+        api_keys_secret_name: Secrets Manager secret holding the provider API
+                           keys as JSON. Empty when unset.
+        max_parallel_criteria: Upper bound on concurrent judge LLM calls.
     """
 
     default_provider: str
@@ -67,6 +94,8 @@ class Config:
     bedrock_model: str
     request_timeout: int
     log_level: str
+    api_keys_secret_name: str = ""
+    max_parallel_criteria: int = 5
 
 
 # ---------------------------------------------------------------------------
@@ -106,10 +135,11 @@ def _load_config() -> Config:
     Returns:
         A new :class:`Config` instance populated from ``os.environ``.
     """
-    try:
-        request_timeout = int(os.environ.get("REQUEST_TIMEOUT", "30"))
-    except ValueError:
-        request_timeout = 30
+    def _int_env(name: str, default: int) -> int:
+        try:
+            return int(os.environ.get(name, str(default)))
+        except ValueError:
+            return default
 
     return Config(
         default_provider=os.environ.get("DEFAULT_PROVIDER", "bedrock"),
@@ -118,9 +148,78 @@ def _load_config() -> Config:
         openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
         openai_model=os.environ.get("OPENAI_MODEL", "gpt-4o"),
         bedrock_model=os.environ.get("BEDROCK_MODEL", "jp.anthropic.claude-sonnet-4-6"),
-        request_timeout=request_timeout,
+        request_timeout=_int_env("REQUEST_TIMEOUT", 30),
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
+        api_keys_secret_name=os.environ.get("API_KEYS_SECRET_NAME", ""),
+        max_parallel_criteria=max(1, _int_env("MAX_PARALLEL_CRITERIA", 5)),
     )
+
+
+# ---------------------------------------------------------------------------
+# API key resolution (environment variable → Secrets Manager)
+# ---------------------------------------------------------------------------
+
+
+def get_api_key(config: Config, provider: str) -> str:
+    """Return the API key for ``provider``, or an empty string when unavailable.
+
+    Resolution order:
+
+    1. The provider's environment variable, when non-empty. This keeps local
+       development and the test suite working without any AWS call.
+    2. The JSON secret named by ``API_KEYS_SECRET_NAME``, fetched through
+       Powertools ``parameters``, which caches it in memory per container.
+
+    Bedrock is not covered here — it authenticates with the Lambda execution
+    role and has no key.
+
+    Args:
+        config:   Application configuration.
+        provider: Provider identifier (``"anthropic"`` or ``"openai"``).
+
+    Returns:
+        The API key, or ``""`` when neither source supplies one.
+    """
+    env_var = _API_KEY_ENV_VARS.get(provider)
+    if env_var is None:
+        return ""
+
+    from_env = {
+        "anthropic": config.anthropic_api_key,
+        "openai": config.openai_api_key,
+    }[provider]
+    if from_env:
+        return from_env
+
+    if not config.api_keys_secret_name:
+        return ""
+
+    # Imported lazily so that environments without the secret configured (the
+    # Bedrock-only default, and the test suite) never import boto3 clients they
+    # will not use.
+    from aws_lambda_powertools.utilities import parameters
+
+    try:
+        secret = parameters.get_secret(config.api_keys_secret_name, transform="json")
+    except Exception as exc:  # noqa: BLE001 — provider-agnostic fallback
+        logger.error(
+            "Failed to read API keys from Secrets Manager",
+            extra={
+                "secret_name": config.api_keys_secret_name,
+                "provider": provider,
+                "error_type": type(exc).__name__,
+            },
+        )
+        return ""
+
+    if not isinstance(secret, dict):
+        logger.error(
+            "API keys secret is not a JSON object",
+            extra={"secret_name": config.api_keys_secret_name},
+        )
+        return ""
+
+    return str(secret.get(env_var, "") or "")
 
 
 # ---------------------------------------------------------------------------
@@ -134,34 +233,40 @@ def validate_for_provider(config: Config, provider: str) -> None:
     Bedrock uses IAM authentication via the Lambda execution role and therefore
     requires no API key validation here.
 
+    The key is resolved through :func:`get_api_key`, so either an environment
+    variable or the Secrets Manager secret satisfies this check.
+
     Args:
         config:   Application configuration.
         provider: Provider identifier (``"anthropic"``, ``"openai"``,
                   or ``"bedrock"``).
 
     Raises:
-        ConfigurationError: If the required API key environment variable is
-            empty for ``"anthropic"`` or ``"openai"``.
+        ConfigurationError: If no API key can be resolved for ``"anthropic"``
+            or ``"openai"``.
     """
     # Import here to avoid circular dependency (handler imports config).
     from src.handler import ConfigurationError
 
-    if provider == "anthropic" and not config.anthropic_api_key:
-        logger.error(
-            "Provider validation failed: missing API key",
-            extra={"provider": provider, "missing_config": "ANTHROPIC_API_KEY"},
-        )
-        raise ConfigurationError(
-            "ANTHROPIC_API_KEY environment variable is not set. "
-            "Configure it via AWS Secrets Manager or Lambda environment variables."
-        )
-    if provider == "openai" and not config.openai_api_key:
-        logger.error(
-            "Provider validation failed: missing API key",
-            extra={"provider": provider, "missing_config": "OPENAI_API_KEY"},
-        )
-        raise ConfigurationError(
-            "OPENAI_API_KEY environment variable is not set. "
-            "Configure it via AWS Secrets Manager or Lambda environment variables."
-        )
-    # Bedrock: no API key required — Lambda execution role provides IAM access.
+    env_var = _API_KEY_ENV_VARS.get(provider)
+    if env_var is None:
+        # Bedrock: no API key required — Lambda execution role provides IAM access.
+        return
+
+    if get_api_key(config, provider):
+        return
+
+    logger.error(
+        "Provider validation failed: missing API key",
+        extra={
+            "provider": provider,
+            "missing_config": env_var,
+            "secret_name": config.api_keys_secret_name or None,
+        },
+    )
+    raise ConfigurationError(
+        f"No API key available for provider '{provider}'. Set the {env_var} "
+        f"environment variable, or add it to the "
+        f"'{config.api_keys_secret_name or '<API_KEYS_SECRET_NAME unset>'}' "
+        "secret in AWS Secrets Manager."
+    )
