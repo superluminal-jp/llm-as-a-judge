@@ -1,9 +1,8 @@
 """Tests for the Step Functions step handlers and the claim-check job store.
 
-The most important assertion here is
-:meth:`TestWorkflowMatchesDirectInvoke.test_identical_response`: the workflow and
-the single-Lambda path must produce byte-identical responses, because both are
-public entry points and ``contracts/lambda-response.json`` describes both.
+The workflow is the only entry point now that the single-Lambda path is gone, so
+these tests own the response contract: the shape asserted here is what
+``contracts/lambda-response.json`` describes and what callers depend on.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from src.handler import ConfigurationError, ValidationError
+from src.errors import ConfigurationError, ValidationError
 
 JOBS_BUCKET = "llm-judge-jobs-test"
 
@@ -182,7 +181,7 @@ class TestPrepare:
         assert job["provider"] == "bedrock"
         assert len(job["criteria"]["criteria"]) == 4
 
-    def test_rejects_the_same_events_as_direct_invoke(
+    def test_malformed_events_are_rejected_before_any_model_call(
         self, jobs_bucket, bedrock_env, lambda_ctx
     ) -> None:
         from src.handlers.prepare import handler
@@ -254,7 +253,7 @@ class TestEvaluateCriterion:
         self, jobs_bucket, bedrock_env, lambda_ctx
     ) -> None:
         """Retries belong to the Map state, not to billed Lambda time."""
-        from src.handler import ProviderError
+        from src.errors import ProviderError
         from src.handlers.evaluate_criterion import handler
 
         prepared = self._prepared(lambda_ctx)
@@ -347,21 +346,36 @@ class TestSummarize:
 
 
 # ---------------------------------------------------------------------------
-# Contract equivalence
+# Response contract
 # ---------------------------------------------------------------------------
 
 
-class TestWorkflowMatchesDirectInvoke:
-    """Both entry points are public and share contracts/lambda-response.json."""
+class TestResponseContract:
+    """The workflow is the only entry point, so it owns the response contract.
 
-    def test_identical_response(self, jobs_bucket, bedrock_env, lambda_ctx) -> None:
-        from src.handler import lambda_handler
+    This validates the assembled response against the published JSON Schema
+    rather than against a second implementation, which is what the old
+    direct-invoke equivalence test did before that path was removed.
+    """
+
+    @staticmethod
+    def _schema() -> dict:
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "contracts",
+            "lambda-response.json",
+        )
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def _run_workflow(self, lambda_ctx, event=None) -> dict:
+        """Drive prepare -> evaluate_criterion(xN) -> summarize as the state machine does."""
         from src.handlers.evaluate_criterion import handler as evaluate_criterion
         from src.handlers.prepare import handler as prepare
         from src.handlers.summarize import handler as summarize
 
-        def fresh_provider() -> MagicMock:
-            provider = MagicMock()
+        def provider() -> MagicMock:
+            mock = MagicMock()
 
             def complete(messages, model, timeout):  # noqa: ARG001
                 text = messages[0]["content"]
@@ -369,53 +383,32 @@ class TestWorkflowMatchesDirectInvoke:
                     return "総評: 全体として良好。"
                 return _criterion_json(4.0, "根拠テキスト")
 
-            provider.complete.side_effect = complete
-            return provider
+            mock.complete.side_effect = complete
+            return mock
 
-        # Direct-invoke path.
-        with patch("src.handler.get_provider", return_value=fresh_provider()):
-            direct = lambda_handler(dict(SAMPLE_EVENT), lambda_ctx)
-
-        # Workflow path, driven exactly as the state machine drives it.
-        prepared = prepare(dict(SAMPLE_EVENT), lambda_ctx)
+        prepared = prepare(dict(event or SAMPLE_EVENT), lambda_ctx)
         with patch(
-            "src.handlers.evaluate_criterion.get_provider",
-            return_value=fresh_provider(),
+            "src.handlers.evaluate_criterion.get_provider", return_value=provider()
         ):
             results = [
                 evaluate_criterion(item, lambda_ctx) for item in prepared["items"]
             ]
-        with patch(
-            "src.handlers.summarize.get_provider", return_value=fresh_provider()
-        ):
-            workflow = summarize(
+        with patch("src.handlers.summarize.get_provider", return_value=provider()):
+            return summarize(
                 {"job_uri": prepared["job_uri"], "results": results}, lambda_ctx
             )
 
-        assert workflow == direct
-
-    def test_both_paths_report_the_same_keys(
+    def test_response_validates_against_published_schema(
         self, jobs_bucket, bedrock_env, lambda_ctx
     ) -> None:
-        """Guards the response schema in contracts/lambda-response.json."""
-        from src.handlers.prepare import handler as prepare
-        from src.handlers.summarize import handler as summarize
+        import jsonschema
 
-        prepared = prepare(dict(SAMPLE_EVENT), lambda_ctx)
-        provider = MagicMock()
-        provider.complete.return_value = "総評"
+        jsonschema.validate(self._run_workflow(lambda_ctx), self._schema())
 
-        with patch("src.handlers.summarize.get_provider", return_value=provider):
-            result = summarize(
-                {
-                    "job_uri": prepared["job_uri"],
-                    "results": [
-                        {"name": "accuracy", "assessability": "assessed",
-                         "score": 4.0, "reasoning": "r"}
-                    ],
-                },
-                lambda_ctx,
-            )
+    def test_response_has_exactly_the_documented_keys(
+        self, jobs_bucket, bedrock_env, lambda_ctx
+    ) -> None:
+        result = self._run_workflow(lambda_ctx)
 
         assert set(result) == {
             "criterion_scores",
@@ -425,4 +418,15 @@ class TestWorkflowMatchesDirectInvoke:
             "judge_model",
             "provider",
         }
+        # Criteria are independent by design; no aggregate is computed.
         assert "overall_score" not in result
+
+    def test_every_criterion_is_accounted_for(
+        self, jobs_bucket, bedrock_env, lambda_ctx
+    ) -> None:
+        result = self._run_workflow(lambda_ctx)
+
+        # DefaultCriteria.balanced() has four dimensions.
+        assert len(result["criterion_assessability"]) == 4
+        assert len(result["criterion_reasoning"]) == 4
+        assert set(result["criterion_scores"]) <= set(result["criterion_assessability"])

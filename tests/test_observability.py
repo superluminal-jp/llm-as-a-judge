@@ -13,8 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.criteria import CriterionDefinition, EvaluationCriteria
-from src.evaluator import evaluate
-from src.handler import ProviderError
+from src.errors import ProviderError
 from src.observability import MetricName, add_count, add_latency_ms
 
 
@@ -52,112 +51,34 @@ class TestTelemetryIsNonFatal:
 
     def test_evaluation_survives_broken_metrics(self) -> None:
         """A metrics backend failure must not fail an otherwise good evaluation."""
+        from src.evaluator import _evaluate_one_criterion
+
         provider = MagicMock()
-        provider.complete.side_effect = [_criterion_json(), "総評"]
+        provider.complete.return_value = _criterion_json()
 
         with patch(
             "src.observability.metrics.add_metric", side_effect=RuntimeError("boom")
         ):
-            result = evaluate(
-                prompt="Q?",
-                response="A.",
-                criteria=_criteria("accuracy"),
+            name, assessability, score, _ = _evaluate_one_criterion(
+                _criteria("accuracy").criteria[0],
+                "Q?",
+                "A.",
+                has_prompt=True,
+                has_response=True,
+                prompt_descriptor=None,
+                response_descriptor=None,
                 provider=provider,
                 model="m",
                 timeout=30,
+                provider_label="bedrock",
             )
 
-        assert result["criterion_scores"] == {"accuracy": 4.0}
+        assert (name, assessability, score) == ("accuracy", "assessed", 4.0)
 
 
 # ---------------------------------------------------------------------------
 # Metrics are emitted on the paths that matter
 # ---------------------------------------------------------------------------
-
-
-class TestEvaluatorMetrics:
-    def test_not_assessable_criteria_are_counted(self) -> None:
-        provider = MagicMock()
-        provider.complete.side_effect = [
-            _criterion_json(assessability="not_assessable"),
-            _criterion_json(assessability="not_assessable"),
-            "総評",
-        ]
-
-        with patch("src.evaluator.add_count") as add:
-            evaluate(
-                prompt="Q?",
-                response="",
-                criteria=_criteria("a", "b"),
-                provider=provider,
-                model="m",
-                timeout=30,
-                has_response=False,
-            )
-
-        counted = [c for c in add.call_args_list if c.args[0] == MetricName.NOT_ASSESSABLE_COUNT]
-        assert counted, "not_assessable criteria were not counted"
-        assert counted[0].args[1] == 2
-
-    def test_no_not_assessable_metric_when_all_assessed(self) -> None:
-        provider = MagicMock()
-        provider.complete.side_effect = [_criterion_json(), "総評"]
-
-        with patch("src.evaluator.add_count") as add:
-            evaluate(
-                prompt="Q?",
-                response="A.",
-                criteria=_criteria("accuracy"),
-                provider=provider,
-                model="m",
-                timeout=30,
-            )
-
-        assert not [
-            c for c in add.call_args_list if c.args[0] == MetricName.NOT_ASSESSABLE_COUNT
-        ]
-
-    def test_criterion_failure_is_counted_and_still_raises(self) -> None:
-        """Fail-fast is deliberate; the metric makes it visible."""
-        provider = MagicMock()
-        provider.complete.side_effect = ProviderError("judge exploded")
-
-        with patch("src.evaluator.add_count") as add:
-            with pytest.raises(ProviderError):
-                evaluate(
-                    prompt="Q?",
-                    response="A.",
-                    criteria=_criteria("accuracy"),
-                    provider=provider,
-                    model="m",
-                    timeout=30,
-                )
-
-        assert [
-            c
-            for c in add.call_args_list
-            if c.args[0] == MetricName.CRITERION_EVALUATION_FAILED
-        ], "criterion failure was not counted"
-
-    def test_judge_latency_recorded_per_call(self) -> None:
-        provider = MagicMock()
-        provider.complete.side_effect = [_criterion_json(), _criterion_json(), "総評"]
-
-        with patch("src.evaluator.add_latency_ms") as latency:
-            evaluate(
-                prompt="Q?",
-                response="A.",
-                criteria=_criteria("a", "b"),
-                provider=provider,
-                model="m",
-                timeout=30,
-            )
-
-        # 2 criterion calls + 1 summary call
-        assert latency.call_count == 3
-        assert all(
-            c.args[0] == MetricName.JUDGE_LATENCY_MS for c in latency.call_args_list
-        )
 
 
 class TestBedrockThrottleMetric:

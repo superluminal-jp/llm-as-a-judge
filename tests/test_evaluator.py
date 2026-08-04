@@ -1,16 +1,20 @@
 """Tests for the evaluator module (src/evaluator.py).
 
-Covers:
-- Single-criterion prompt construction.
-- Single-criterion response parsing (score + reasoning).
-- evaluate() runs one LLM call per criterion in parallel and returns
-  criterion_scores and 総評 reasoning (no overall_score).
+Covers the pure building blocks the workflow steps compose:
+
+- Single-criterion judge prompt construction, including single-sided
+  submissions, operator descriptors, system prompts, and retrieval contexts.
+- Single-criterion response parsing (assessability, optional score, reasoning).
+- Summary prompt construction.
+
+Orchestration is not tested here. The fan-out across criteria belongs to the
+Step Functions Map state; see tests/test_cdk_stack.py for its concurrency and
+retry configuration, and tests/test_workflow_handlers.py for the step handlers.
 """
 
 from __future__ import annotations
 
 import json
-import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -19,13 +23,12 @@ from src.criteria import CriterionDefinition, EvaluationCriteria
 from src.evaluator import (
     ASSESSABILITY_ASSESSED,
     ASSESSABILITY_NOT_ASSESSABLE,
-    _build_summary_prompt,
     _render_context_section,
     build_evaluation_prompt_single_criterion,
-    evaluate,
+    build_summary_prompt,
     parse_single_criterion_response,
 )
-from src.handler import ProviderError
+from src.errors import ProviderError
 
 # Keyword-only flags for paired evaluation in unit tests.
 _PAIRED_ROLES = {"has_prompt": True, "has_response": True}
@@ -264,94 +267,6 @@ class TestParseSingleCriterionResponse:
         assert score == 4.0
 
 
-# ---------------------------------------------------------------------------
-# evaluate()
-# ---------------------------------------------------------------------------
-
-
-class TestEvaluate:
-    def test_evaluate_calls_provider_per_criterion(self, simple_criteria):
-        mock_provider = MagicMock()
-        mock_provider.complete.side_effect = [
-            _judge_criterion_json(4.0, "Good accuracy."),
-            _judge_criterion_json(3.0, "Clear enough."),
-            "accuracyは4.0と高く正確だが、clarityは3.0とやや改善の余地がある。",
-        ]
-
-        result = evaluate(
-            prompt="Q?",
-            response="A.",
-            criteria=simple_criteria,
-            provider=mock_provider,
-            model="m",
-            timeout=30,
-        )
-
-        # 2 criterion calls + 1 summary call
-        assert mock_provider.complete.call_count == 3
-        assert result["criterion_scores"] == {"accuracy": 4.0, "clarity": 3.0}
-        assert result["criterion_assessability"] == {
-            "accuracy": ASSESSABILITY_ASSESSED,
-            "clarity": ASSESSABILITY_ASSESSED,
-        }
-        assert "overall_score" not in result
-        assert result["reasoning"] == "accuracyは4.0と高く正確だが、clarityは3.0とやや改善の余地がある。"
-        assert result["criterion_reasoning"]["accuracy"] == "Good accuracy."
-        assert result["criterion_reasoning"]["clarity"] == "Clear enough."
-
-    def test_evaluate_with_steps_surfaces_step_reasoning(self, stepped_criteria):
-        mock_provider = MagicMock()
-        mock_provider.complete.side_effect = [
-            _judge_criterion_json(
-                4.0,
-                "Overall accurate.",
-                step_reasoning=[
-                    "Yes, facts verified.",
-                    "No contradictions.",
-                ],
-            ),
-            "accuracyは4.0。段階的な評価により事実確認と矛盾チェックを通過した。",
-        ]
-
-        result = evaluate(
-            prompt="Q?",
-            response="A.",
-            criteria=stepped_criteria,
-            provider=mock_provider,
-            model="m",
-            timeout=30,
-        )
-
-        assert result["criterion_scores"] == {"accuracy": 4.0}
-        assert result["criterion_assessability"]["accuracy"] == ASSESSABILITY_ASSESSED
-        assert "Step 1:" in result["criterion_reasoning"]["accuracy"]
-        assert "Step 2:" in result["criterion_reasoning"]["accuracy"]
-        assert "Final:" in result["criterion_reasoning"]["accuracy"]
-
-    def test_evaluate_provider_error_propagates(self, simple_criteria):
-        mock_provider = MagicMock()
-        mock_provider.complete.side_effect = [
-            _judge_criterion_json(4.0, "OK."),
-            ProviderError("Rate limited"),
-            "summary not reached",
-        ]
-
-        with pytest.raises(ProviderError, match="Rate limited"):
-            evaluate(
-                prompt="Q?",
-                response="A.",
-                criteria=simple_criteria,
-                provider=mock_provider,
-                model="m",
-                timeout=30,
-            )
-
-
-# ---------------------------------------------------------------------------
-# _render_context_section
-# ---------------------------------------------------------------------------
-
-
 class TestRenderContextSection:
     def test_single_item_no_numbering(self):
         """Single-item list renders as plain text without a number prefix."""
@@ -529,7 +444,7 @@ class TestContextInJudgePrompt:
 
 
 # ---------------------------------------------------------------------------
-# system_prompt and contexts in _build_summary_prompt (US3)
+# system_prompt and contexts in build_summary_prompt (US3)
 # ---------------------------------------------------------------------------
 
 
@@ -544,7 +459,7 @@ _SUMMARY_PAIRED = {"has_prompt": True, "has_response": True}
 class TestSummaryPromptOptionalFields:
     def test_no_optional_fields_omits_both_sections(self):
         """No system_prompt or contexts → neither ## System Prompt nor ## Additional Context."""
-        prompt = _build_summary_prompt(
+        prompt = build_summary_prompt(
             "Q?", "A.", _SAMPLE_RESULTS, **_SUMMARY_PAIRED
         )
         assert "## System Prompt" not in prompt
@@ -553,7 +468,7 @@ class TestSummaryPromptOptionalFields:
     def test_system_prompt_only_adds_section(self):
         """system_prompt renders before ## Text in prompt role in the summary prompt."""
         sp = "You are a helpful assistant."
-        prompt = _build_summary_prompt(
+        prompt = build_summary_prompt(
             "Q?", "A.", _SAMPLE_RESULTS, system_prompt=sp, **_SUMMARY_PAIRED
         )
         assert "## System Prompt" in prompt
@@ -565,7 +480,7 @@ class TestSummaryPromptOptionalFields:
     def test_contexts_only_multi_item_adds_numbered_section(self):
         """Multi-item contexts render after ## Text in response role in summary."""
         contexts = ["Doc A.", "Doc B."]
-        prompt = _build_summary_prompt(
+        prompt = build_summary_prompt(
             "Q?", "A.", _SAMPLE_RESULTS, contexts=contexts, **_SUMMARY_PAIRED
         )
         assert "## Additional Context" in prompt
@@ -580,7 +495,7 @@ class TestSummaryPromptOptionalFields:
         """Both system_prompt and contexts sections appear before ## Per-Criterion Results."""
         sp = "Be concise."
         contexts = ["Reference material."]
-        prompt = _build_summary_prompt(
+        prompt = build_summary_prompt(
             "Q?",
             "A.",
             _SAMPLE_RESULTS,
@@ -596,166 +511,3 @@ class TestSummaryPromptOptionalFields:
         assert ctx_pos < results_pos
 
 
-# ---------------------------------------------------------------------------
-# End-to-end mock test: evaluate() propagates both fields to all LLM calls
-# ---------------------------------------------------------------------------
-
-
-class TestEvaluateWithOptionalFields:
-    def test_evaluate_passes_system_prompt_and_contexts_to_prompt_builder(
-        self, simple_criteria
-    ):
-        """evaluate() forwards system_prompt and contexts to build_evaluation_prompt_single_criterion
-        and to _build_summary_prompt."""
-        mock_provider = MagicMock()
-        mock_provider.complete.side_effect = [
-            _judge_criterion_json(4.0, "Good accuracy."),
-            _judge_criterion_json(3.0, "Clear enough."),
-            "システムプロンプトを踏まえた総評。",
-        ]
-
-        sp = "You are a strict evaluator."
-        contexts = ["Context doc 1.", "Context doc 2."]
-
-        result = evaluate(
-            prompt="Q?",
-            response="A.",
-            criteria=simple_criteria,
-            provider=mock_provider,
-            model="m",
-            timeout=30,
-            system_prompt=sp,
-            contexts=contexts,
-        )
-
-        # Verify the system_prompt and both context items appeared in at least one LLM call.
-        all_calls = [call.kwargs["messages"][0]["content"]
-                     for call in mock_provider.complete.call_args_list]
-        per_criterion_calls = all_calls[:2]
-        summary_call = all_calls[2]
-
-        for call_content in per_criterion_calls:
-            assert "## System Prompt" in call_content
-            assert sp in call_content
-            assert "## Additional Context" in call_content
-            assert "[1] Context doc 1." in call_content
-            assert "[2] Context doc 2." in call_content
-
-        assert "## System Prompt" in summary_call
-        assert "## Additional Context" in summary_call
-
-        assert result["criterion_scores"] == {"accuracy": 4.0, "clarity": 3.0}
-        assert result["criterion_assessability"]["accuracy"] == ASSESSABILITY_ASSESSED
-        assert result["criterion_assessability"]["clarity"] == ASSESSABILITY_ASSESSED
-        assert result["reasoning"] == "システムプロンプトを踏まえた総評。"
-
-
-# ---------------------------------------------------------------------------
-# Bounded parallelism
-# ---------------------------------------------------------------------------
-
-
-class TestEvaluateParallelismIsBounded:
-    """Fan-out must be capped rather than dictated by the criteria count.
-
-    A criteria file with N criteria previously opened N concurrent judge calls
-    per invocation, which multiplied by Lambda concurrency to overrun Bedrock
-    account quota and exhaust the botocore connection pool.
-    """
-
-    @staticmethod
-    def _criteria(count: int) -> EvaluationCriteria:
-        return EvaluationCriteria(
-            name="Many",
-            criteria=[
-                CriterionDefinition(name=f"c{i}", description=f"Criterion {i}")
-                for i in range(count)
-            ],
-        )
-
-    @staticmethod
-    def _provider_recording_concurrency(peak: list[int], live: list[int]):
-        import threading
-
-        lock = threading.Lock()
-
-        def complete(messages, model, timeout):  # noqa: ARG001
-            with lock:
-                live[0] += 1
-                peak[0] = max(peak[0], live[0])
-            time.sleep(0.02)
-            with lock:
-                live[0] -= 1
-            return _judge_criterion_json(4.0, "ok")
-
-        provider = MagicMock()
-        provider.complete.side_effect = complete
-        return provider
-
-    def test_worker_count_respects_max_parallel(self):
-        peak, live = [0], [0]
-        provider = self._provider_recording_concurrency(peak, live)
-
-        evaluate(
-            prompt="Q?",
-            response="A.",
-            criteria=self._criteria(10),
-            provider=provider,
-            model="m",
-            timeout=30,
-            max_parallel=3,
-        )
-
-        assert peak[0] <= 3, f"observed {peak[0]} concurrent judge calls, expected <= 3"
-
-    def test_all_criteria_still_evaluated_when_capped(self):
-        provider = MagicMock()
-        provider.complete.side_effect = [_judge_criterion_json(4.0, "ok")] * 10 + [
-            "総評"
-        ]
-
-        result = evaluate(
-            prompt="Q?",
-            response="A.",
-            criteria=self._criteria(10),
-            provider=provider,
-            model="m",
-            timeout=30,
-            max_parallel=2,
-        )
-
-        assert len(result["criterion_scores"]) == 10
-        assert provider.complete.call_count == 11  # 10 criteria + 1 summary
-
-    def test_criterion_order_preserved_under_cap(self):
-        provider = MagicMock()
-        provider.complete.side_effect = [_judge_criterion_json(4.0, "ok")] * 6 + ["総評"]
-
-        result = evaluate(
-            prompt="Q?",
-            response="A.",
-            criteria=self._criteria(6),
-            provider=provider,
-            model="m",
-            timeout=30,
-            max_parallel=2,
-        )
-
-        assert list(result["criterion_reasoning"].keys()) == [f"c{i}" for i in range(6)]
-
-    def test_max_parallel_below_one_is_clamped(self):
-        """A zero worker count would make ThreadPoolExecutor raise."""
-        provider = MagicMock()
-        provider.complete.side_effect = [_judge_criterion_json(4.0, "ok")] * 2 + ["総評"]
-
-        result = evaluate(
-            prompt="Q?",
-            response="A.",
-            criteria=self._criteria(2),
-            provider=provider,
-            model="m",
-            timeout=30,
-            max_parallel=0,
-        )
-
-        assert len(result["criterion_scores"]) == 2

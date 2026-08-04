@@ -173,7 +173,7 @@ def load_from_dict(data: dict[str, Any]) -> EvaluationCriteria:
             or contains invalid criterion definitions.
     """
     # Import here to avoid circular dependency (handler imports criteria).
-    from src.handler import ValidationError
+    from src.errors import ValidationError
 
     if "criteria" not in data:
         logger.warning(
@@ -235,7 +235,7 @@ def _parse_s3_uri(s3_uri: str) -> tuple[str, str]:
     Raises:
         ValidationError: If the URI does not match the expected format.
     """
-    from src.handler import ValidationError
+    from src.errors import ValidationError
 
     match = re.match(r"^s3://([^/]+)/(.+)$", s3_uri)
     if not match:
@@ -261,7 +261,7 @@ def load_from_s3(s3_uri: str) -> EvaluationCriteria:
         ConfigurationError: If the Lambda execution role lacks ``s3:GetObject``
             permission on the target bucket.
     """
-    from src.handler import ConfigurationError, CriteriaLoadError
+    from src.errors import ConfigurationError, CriteriaLoadError
 
     bucket, key = _parse_s3_uri(s3_uri)
 

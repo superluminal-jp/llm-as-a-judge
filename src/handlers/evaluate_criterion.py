@@ -46,7 +46,7 @@ def handler(event: dict, context: LambdaContext) -> dict[str, Any]:
         ProviderError:   If the judge LLM call fails or its output cannot be
             parsed.
     """
-    from src.handler import ValidationError
+    from src.errors import ValidationError
 
     request_id = getattr(context, "aws_request_id", None)
     if request_id:

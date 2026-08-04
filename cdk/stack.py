@@ -1,11 +1,21 @@
-"""CDK stack definition for LLM-as-a-Judge Lambda deployment.
+"""CDK stack definition for the LLM-as-a-Judge evaluation workflow.
 
-Deploys the evaluation Lambda together with the supporting resources it needs to
-be operable in production:
+Evaluation runs entirely as a Step Functions workflow. A single Lambda used to
+carry the whole evaluation, fanning criteria out across a thread pool; that path
+is gone. Concurrency, retry, and failure attribution are properties of the state
+machine now, which is what lets the service scale past what one invocation can
+hold and lets a throttled criterion back off without burning billed time.
 
-* **Lambda function** — Python 3.12 on ARM64 (Graviton), explicit log group,
-  JSON structured logging, active X-Ray tracing, reserved concurrency, and an
-  SQS dead-letter queue for failed asynchronous invocations.
+Deployed resources:
+
+* **Lambda functions** — one per workflow step (prepare, evaluate-criterion,
+  summarize) on Python 3.13/ARM64 (Graviton), each with its own execution role,
+  explicit log group, JSON structured logging, active X-Ray tracing, and
+  reserved concurrency. Splitting the steps is what makes least privilege
+  achievable: the prepare step cannot invoke a model, and the criterion worker
+  cannot write to the jobs bucket.
+* **Step Functions** — the workflow itself, fanning criteria out across a Map
+  state whose MaxConcurrency bounds pressure on Bedrock quota.
 * **IAM** — ``bedrock:InvokeModel`` scoped to the *specific* model IDs and
   cross-region inference profiles configured in ``config/parameters.json``,
   rather than ``arn:aws:bedrock:*::foundation-model/*``.
@@ -15,8 +25,8 @@ be operable in production:
   variables, the dead-letter queue, the alarm topic, and the API-key secret.
 * **S3** — the criteria bucket, either created by this stack (encrypted,
   versioned, TLS-only, public access blocked) or imported from an existing ARN.
-* **CloudWatch** — alarms on errors, throttles, duration, and DLQ depth, plus a
-  dashboard, all notifying an SNS topic.
+* **CloudWatch** — alarms on errors, throttles, duration, DLQ depth, and
+  workflow failures, plus a dashboard, all notifying an SNS topic.
 
 Cross-region inference profiles
     Bedrock model IDs carrying a region prefix (``jp.``, ``us.``, ``eu.``,
@@ -99,7 +109,7 @@ _RETRYABLE_ERRORS = [
 
 
 class LlmJudgeStack(cdk.Stack):
-    """CloudFormation stack for the LLM-as-a-Judge Lambda function.
+    """CloudFormation stack for the LLM-as-a-Judge evaluation workflow.
 
     Configuration is driven by ``config/parameters.json`` (passed in as keyword
     arguments by :mod:`cdk.app`) and can be overridden per-deployment with CDK
@@ -107,8 +117,9 @@ class LlmJudgeStack(cdk.Stack):
 
     Context keys (override the corresponding keyword argument when non-empty):
 
-        default_provider (str):     LLM provider used when the Lambda event does
-                                    not specify one. Defaults to ``"bedrock"``.
+        default_provider (str):     LLM provider used when the invocation event
+                                    does not specify one. Defaults to
+                                    ``"bedrock"``.
         bedrock_model (str):        Default Bedrock judge model / inference
                                     profile ID.
         criteria_bucket_arn (str):  ARN of an existing S3 bucket holding
@@ -122,7 +133,7 @@ class LlmJudgeStack(cdk.Stack):
                           Used in resource names and log retention policy.
         default_provider: Default LLM provider.
         bedrock_model:    Default Bedrock model or inference profile ID.
-        bedrock_allowed_models: Every Bedrock model/profile ID the function is
+        bedrock_allowed_models: Every Bedrock model/profile ID the workflow is
                           permitted to invoke. Defaults to
                           ``[bedrock_model]``.
         bedrock_inference_profile_regions: Regions a cross-region inference
@@ -465,23 +476,6 @@ class LlmJudgeStack(cdk.Stack):
                 description=description,
             )
 
-        # Direct-invoke entry point. Retained as a fully functional path, not a
-        # deprecated shim: it evaluates every criterion in one invocation, which
-        # stays the simplest option for small criteria sets and keeps the
-        # existing `aws lambda invoke` contract working unchanged.
-        function = _make_function(
-            "LlmJudgeFunction",
-            "",
-            "src.handler.lambda_handler",
-            (
-                "LLM-as-a-Judge: evaluates LLM responses using a multi-criteria "
-                "rubric via Anthropic, OpenAI, or Amazon Bedrock (single-Lambda "
-                "path)."
-            ),
-            timeout_sec=_LAMBDA_TIMEOUT_SEC,
-            with_dlq=True,
-        )
-
         prepare_function = _make_function(
             "PrepareFunction",
             "-prepare",
@@ -489,6 +483,7 @@ class LlmJudgeStack(cdk.Stack):
             "LLM-as-a-Judge workflow: validate the request and stage it in S3.",
             timeout_sec=60,
             memory_mb=256,
+            with_dlq=True,
         )
 
         evaluate_criterion_function = _make_function(
@@ -529,40 +524,51 @@ class LlmJudgeStack(cdk.Stack):
             resources=[criteria_bucket.arn_for_objects("*")],
         )
 
-        # Only the functions that actually call a model get Bedrock access.
+        # Only the steps that actually call a model get Bedrock access.
         # PrepareFunction never invokes one.
-        for model_caller in (
-            function,
-            evaluate_criterion_function,
-            summarize_function,
-        ):
+        for model_caller in (evaluate_criterion_function, summarize_function):
             model_caller.add_to_role_policy(bedrock_statement)
             api_keys_secret.grant_read(model_caller)
 
-        # Only the functions that resolve a criteria file read the criteria
-        # bucket. The workflow resolves criteria once, in PrepareFunction.
-        for criteria_reader in (function, prepare_function):
-            criteria_reader.add_to_role_policy(criteria_read_statement)
+        # Criteria are resolved exactly once, in PrepareFunction; no other step
+        # needs to read the criteria bucket.
+        prepare_function.add_to_role_policy(criteria_read_statement)
 
-        # Jobs bucket: prepare writes, the other two only read.
-        jobs_bucket.grant_put(prepare_function)
-        jobs_bucket.grant_read(evaluate_criterion_function)
-        jobs_bucket.grant_read(summarize_function)
+        # Jobs bucket: prepare stages the payload, the other two read it back.
+        # Written out rather than using grant_put/grant_read, which also hand out
+        # bucket-level s3:List* and s3:GetBucket*. Every access here is by a key
+        # the workflow already knows, so object-level actions are sufficient.
+        prepare_function.add_to_role_policy(
+            iam.PolicyStatement(
+                sid="S3PutJobPayload",
+                effect=iam.Effect.ALLOW,
+                actions=["s3:PutObject"],
+                resources=[jobs_bucket.arn_for_objects("*")],
+            )
+        )
+        for job_reader in (evaluate_criterion_function, summarize_function):
+            job_reader.add_to_role_policy(
+                iam.PolicyStatement(
+                    sid="S3GetJobPayload",
+                    effect=iam.Effect.ALLOW,
+                    actions=["s3:GetObject"],
+                    resources=[jobs_bucket.arn_for_objects("*")],
+                )
+            )
 
         # -----------------------------------------------------------------
-        # IAM — KMS for the dead-letter queue
+        # IAM — KMS
         # -----------------------------------------------------------------
-        # Lambda writes failed asynchronous invocations to the DLQ using the
-        # function's execution role. Because the queue is encrypted with a
-        # customer-managed key, that role needs kms:GenerateDataKey in addition
-        # to the kms:Decrypt that environment_encryption already grants —
-        # otherwise DLQ delivery fails silently and the events are lost.
+        # Every function needs kms:Decrypt to read its own encrypted
+        # environment. PrepareFunction additionally carries the dead-letter
+        # queue, and Lambda writes to the DLQ using the function's execution
+        # role — since the queue is encrypted with a customer-managed key, that
+        # role also needs kms:GenerateDataKey, without which DLQ delivery fails
+        # silently and the events are lost.
 
-        encryption_key.grant_encrypt_decrypt(function)
+        encryption_key.grant_encrypt_decrypt(prepare_function)
 
-        # The workflow functions only need to decrypt their own environment.
         for workflow_function in (
-            prepare_function,
             evaluate_criterion_function,
             summarize_function,
         ):
@@ -613,7 +619,9 @@ class LlmJudgeStack(cdk.Stack):
                 "FunctionErrorsAlarm",
                 alarm_name=f"{resource_prefix}-errors",
                 alarm_description="LLM-as-a-Judge Lambda returned an error.",
-                metric=function.metric_errors(period=cdk.Duration.minutes(5)),
+                metric=evaluate_criterion_function.metric_errors(
+                    period=cdk.Duration.minutes(5)
+                ),
                 threshold=1,
                 evaluation_periods=1,
                 comparison_operator=(
@@ -629,7 +637,9 @@ class LlmJudgeStack(cdk.Stack):
                     "LLM-as-a-Judge Lambda was throttled — reserved concurrency "
                     "may be too low for current demand."
                 ),
-                metric=function.metric_throttles(period=cdk.Duration.minutes(5)),
+                metric=evaluate_criterion_function.metric_throttles(
+                    period=cdk.Duration.minutes(5)
+                ),
                 threshold=1,
                 evaluation_periods=1,
                 comparison_operator=(
@@ -644,7 +654,7 @@ class LlmJudgeStack(cdk.Stack):
                 alarm_description=(
                     "p99 duration exceeded 80% of the configured Lambda timeout."
                 ),
-                metric=function.metric_duration(
+                metric=evaluate_criterion_function.metric_duration(
                     period=cdk.Duration.minutes(5), statistic="p99"
                 ),
                 threshold=_LAMBDA_TIMEOUT_SEC * 1000 * 0.8,
@@ -699,19 +709,22 @@ class LlmJudgeStack(cdk.Stack):
         )
         dashboard.add_widgets(
             cloudwatch.GraphWidget(
-                title="Invocations / Errors / Throttles",
+                title="Criterion worker: invocations / errors / throttles",
                 left=[
-                    function.metric_invocations(),
-                    function.metric_errors(),
-                    function.metric_throttles(),
+                    evaluate_criterion_function.metric_invocations(),
+                    evaluate_criterion_function.metric_errors(),
+                    evaluate_criterion_function.metric_throttles(),
+                    prepare_function.metric_errors(),
+                    summarize_function.metric_errors(),
                 ],
                 width=12,
             ),
             cloudwatch.GraphWidget(
-                title="Duration (avg / p99)",
+                title="Duration (criterion avg / p99, summarize p99)",
                 left=[
-                    function.metric_duration(statistic="avg"),
-                    function.metric_duration(statistic="p99"),
+                    evaluate_criterion_function.metric_duration(statistic="avg"),
+                    evaluate_criterion_function.metric_duration(statistic="p99"),
+                    summarize_function.metric_duration(statistic="p99"),
                 ],
                 width=12,
             ),
@@ -755,21 +768,6 @@ class LlmJudgeStack(cdk.Stack):
         # -----------------------------------------------------------------
         # Outputs
         # -----------------------------------------------------------------
-
-        cdk.CfnOutput(
-            self,
-            "LambdaFunctionArn",
-            value=function.function_arn,
-            description="ARN of the LLM-as-a-Judge Lambda function.",
-            export_name=f"{resource_prefix}-function-arn",
-        )
-
-        cdk.CfnOutput(
-            self,
-            "LambdaFunctionName",
-            value=function.function_name,
-            description="Name of the LLM-as-a-Judge Lambda function.",
-        )
 
         cdk.CfnOutput(
             self,
@@ -830,7 +828,6 @@ class LlmJudgeStack(cdk.Stack):
         # not listed here must be fixed rather than suppressed.
 
         for lambda_construct in (
-            function,
             prepare_function,
             evaluate_criterion_function,
             summarize_function,
@@ -972,9 +969,13 @@ class LlmJudgeStack(cdk.Stack):
                 apply_to_children=True,
             )
 
-        # Retained as attributes so that Phase-4 constructs and tests can reach
-        # them without re-deriving names.
-        self.function = function
+        # Retained as attributes so that tests and any future constructs can
+        # reach them without re-deriving names.
+        self.prepare_function = prepare_function
+        self.evaluate_criterion_function = evaluate_criterion_function
+        self.summarize_function = summarize_function
+        self.state_machine = state_machine
+        self.jobs_bucket = jobs_bucket
         self.criteria_bucket = criteria_bucket
         self.encryption_key = encryption_key
         self.dead_letter_queue = dead_letter_queue

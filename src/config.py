@@ -246,7 +246,7 @@ def validate_for_provider(config: Config, provider: str) -> None:
             or ``"openai"``.
     """
     # Import here to avoid circular dependency (handler imports config).
-    from src.handler import ConfigurationError
+    from src.errors import ConfigurationError
 
     env_var = _API_KEY_ENV_VARS.get(provider)
     if env_var is None:

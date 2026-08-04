@@ -54,7 +54,7 @@ def _parse_s3_uri(s3_uri: str) -> tuple[str, str]:
     Raises:
         ValidationError: If the URI does not match the expected format.
     """
-    from src.handler import ValidationError
+    from src.errors import ValidationError
 
     match = _S3_URI_PATTERN.match(s3_uri)
     if not match:
@@ -78,7 +78,7 @@ def put_job(bucket: str, payload: dict[str, Any]) -> str:
         ConfigurationError: If ``bucket`` is empty or the write is denied.
         LlmJudgeError:      If the object cannot be written for any other reason.
     """
-    from src.handler import ConfigurationError, LlmJudgeError
+    from src.errors import ConfigurationError, LlmJudgeError
 
     if not bucket:
         raise ConfigurationError(
@@ -136,7 +136,7 @@ def get_job(job_uri: str) -> dict[str, Any]:
         ConfigurationError: If reading is denied.
         LlmJudgeError:     If the object is missing or is not valid JSON.
     """
-    from src.handler import ConfigurationError, LlmJudgeError
+    from src.errors import ConfigurationError, LlmJudgeError
 
     cached = _job_cache.get(job_uri)
     if cached is not None:

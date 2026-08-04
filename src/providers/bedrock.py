@@ -132,7 +132,7 @@ class BedrockProvider:
             ProviderError: If the Bedrock API call fails (throttling, model not
                 found, permission denied, malformed response, timeout).
         """
-        from src.handler import ProviderError
+        from src.errors import ProviderError
 
         # Convert to Bedrock Converse API message format.
         bedrock_messages = [

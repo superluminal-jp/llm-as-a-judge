@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.handler import ConfigurationError
+from src.errors import ConfigurationError
 
 
 def _make_config(**overrides):

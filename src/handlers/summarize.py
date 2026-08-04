@@ -5,7 +5,7 @@ original criterion ordering, asks the judge for an executive summary, and
 returns the response dict.
 
 The output is byte-compatible with :func:`src.handler.lambda_handler` because it
-is produced by the same :func:`src.evaluator._aggregate_parallel_results`.
+is produced by the same :func:`src.evaluator.aggregate_results`.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from src.config import get_config
 from src.criteria import load_from_dict
 from src.evaluator import (
     ASSESSABILITY_NOT_ASSESSABLE,
-    _aggregate_parallel_results,
-    _build_summary_prompt,
+    aggregate_results,
+    build_summary_prompt,
 )
 from src.jobs import get_job
 from src.observability import MetricName, add_count, metrics, tracer
@@ -46,7 +46,7 @@ def handler(event: dict, context: LambdaContext) -> dict[str, Any]:
         ValidationError: If the event is missing the job URI or results.
         ProviderError:   If the summary LLM call fails.
     """
-    from src.handler import ValidationError
+    from src.errors import ValidationError
 
     request_id = getattr(context, "aws_request_id", None)
     if request_id:
@@ -83,7 +83,7 @@ def handler(event: dict, context: LambdaContext) -> dict[str, Any]:
     metrics.add_dimension(name="provider", value=provider_name)
     metrics.add_dimension(name="judge_model", value=judge_model)
 
-    summary_prompt = _build_summary_prompt(
+    summary_prompt = build_summary_prompt(
         job["prompt"],
         job["response"],
         results,
@@ -118,7 +118,7 @@ def handler(event: dict, context: LambdaContext) -> dict[str, Any]:
         },
     )
 
-    return _aggregate_parallel_results(
+    return aggregate_results(
         results,
         reasoning=reasoning,
         judge_model=judge_model,

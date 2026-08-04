@@ -5,9 +5,9 @@ exactly once — input validation, criteria resolution, provider/model selection
 then writes the resulting payload to S3 and returns the claim-check URI plus one
 Map item per criterion.
 
-Reuses :func:`src.handler._validate_event` and the loaders in
-:mod:`src.criteria` so that the direct-invoke handler and the workflow accept
-byte-identical events.
+Reuses :func:`src.validation.validate_event` and the loaders in
+:mod:`src.criteria`, so validation happens once per evaluation rather than once
+per criterion.
 """
 
 from __future__ import annotations
@@ -21,9 +21,9 @@ from aws_lambda_powertools.utilities.typing import LambdaContext
 
 from src.config import get_config, validate_for_provider
 from src.criteria import DefaultCriteria, load_from_s3
-from src.handler import _default_model, _normalize_context, _validate_event
 from src.jobs import put_job
 from src.observability import metrics, tracer
+from src.validation import default_model, normalize_context, validate_event
 
 logger = Logger(service="llm-judge")
 
@@ -52,15 +52,13 @@ def handler(event: dict, context: LambdaContext) -> dict[str, Any]:
         logger.set_correlation_id(request_id)
 
     prompt_text, response_text, prompt_descriptor, response_descriptor = (
-        _validate_event(event)
+        validate_event(event)
     )
 
     config = get_config()
 
     provider_name: str = event.get("provider") or config.default_provider
-    judge_model: str = event.get("judge_model") or _default_model(
-        config, provider_name
-    )
+    judge_model: str = event.get("judge_model") or default_model(config, provider_name)
     validate_for_provider(config, provider_name)
 
     criteria_file: str | None = event.get("criteria_file")
@@ -81,7 +79,7 @@ def handler(event: dict, context: LambdaContext) -> dict[str, Any]:
         "prompt_descriptor": prompt_descriptor,
         "response_descriptor": response_descriptor,
         "system_prompt": event.get("system_prompt") or None,
-        "contexts": _normalize_context(event.get("contexts")),
+        "contexts": normalize_context(event.get("contexts")),
         "has_prompt": bool(prompt_text),
         "has_response": bool(response_text),
         "provider": provider_name,

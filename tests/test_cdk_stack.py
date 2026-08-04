@@ -91,35 +91,6 @@ def _actions(statements: list[dict]) -> set[str]:
     return actions
 
 
-def _judge_role_statements(template: Template) -> list[dict]:
-    """Return the IAM statements attached to the judge function's execution role.
-
-    The stack also synthesises a role for the S3 BucketDeployment custom
-    resource; assertions about least privilege must not accidentally inspect it.
-    """
-    rendered = template.to_json()["Resources"]
-    role_logical_ids = {
-        logical_id
-        for logical_id, resource in rendered.items()
-        if resource["Type"] == "AWS::IAM::Role"
-        and logical_id.startswith("LlmJudgeFunctionServiceRole")
-    }
-    assert role_logical_ids, "judge function execution role not found"
-
-    statements: list[dict] = []
-    for resource in rendered.values():
-        if resource["Type"] != "AWS::IAM::Policy":
-            continue
-        refs = {
-            role.get("Ref")
-            for role in resource["Properties"].get("Roles", [])
-            if isinstance(role, dict)
-        }
-        if refs & role_logical_ids:
-            statements.extend(resource["Properties"]["PolicyDocument"]["Statement"])
-    return statements
-
-
 # ---------------------------------------------------------------------------
 # IAM — least privilege
 # ---------------------------------------------------------------------------
@@ -207,14 +178,16 @@ class TestS3Iam:
             },
         )
 
-    def test_judge_role_gets_no_bucket_level_access(self, template: Template) -> None:
-        """The judge function reads objects only.
+    def test_criterion_worker_gets_no_bucket_level_access(
+        self, template: Template
+    ) -> None:
+        """The criterion worker reads objects only.
 
-        Scoped to the function's own role: the BucketDeployment custom resource
+        Scoped to that step's own role: the BucketDeployment custom resource
         legitimately holds broader access to the same bucket, so a whole-template
         string search would pass vacuously.
         """
-        for statement in _judge_role_statements(template):
+        for statement in _role_statements(template, "EvaluateCriterionFunctionServiceRole"):
             actions = statement["Action"]
             actions = [actions] if isinstance(actions, str) else actions
             for action in actions:
@@ -413,16 +386,13 @@ class TestSupportingResources:
             Match.object_like({"EnableKeyRotation": True}),
         )
 
-    def test_judge_role_can_encrypt_for_the_dlq(self, template: Template) -> None:
+    def test_dlq_owner_can_encrypt_for_the_queue(self, template: Template) -> None:
         """kms:Decrypt alone is not enough to write to a CMK-encrypted queue."""
-        granted: set[str] = set()
-        for statement in _judge_role_statements(template):
-            actions = statement["Action"]
-            actions = [actions] if isinstance(actions, str) else actions
-            granted.update(str(a) for a in actions)
+        granted = _actions(_role_statements(template, "PrepareFunctionServiceRole"))
         assert any(a.startswith("kms:GenerateDataKey") for a in granted), (
-            "judge role cannot generate a data key, so DLQ delivery would fail "
-            f"silently. Granted KMS actions: {sorted(a for a in granted if 'kms' in a)}"
+            "the DLQ-carrying function cannot generate a data key, so DLQ "
+            "delivery would fail silently. Granted KMS actions: "
+            f"{sorted(a for a in granted if 'kms' in a)}"
         )
 
     def test_cloudwatch_can_publish_to_encrypted_alarm_topic(
@@ -550,18 +520,23 @@ class TestEvaluationWorkflow:
         assert "BackoffRate" in definition
         assert "FULL" in definition
 
-    def test_three_workflow_functions_plus_direct_invoke(
-        self, template: Template
-    ) -> None:
+    def test_exactly_three_workflow_functions(self, template: Template) -> None:
+        """One Lambda per step. The single-Lambda path no longer exists."""
         functions = template.find_resources("AWS::Lambda::Function")
-        ours = [
+        ours = sorted(
             logical_id
             for logical_id in functions
             if logical_id.startswith(
-                ("LlmJudgeFunction", "PrepareFunction", "EvaluateCriterion", "Summarize")
+                ("PrepareFunction", "EvaluateCriterion", "Summarize")
             )
-        ]
-        assert len(ours) == 4, f"expected 4 service functions, found {sorted(ours)}"
+        )
+        assert len(ours) == 3, f"expected 3 workflow functions, found {ours}"
+
+        assert not [
+            logical_id
+            for logical_id in functions
+            if logical_id.startswith("LlmJudgeFunction")
+        ], "the removed single-Lambda entry point is still being synthesised"
 
     def test_prepare_function_cannot_invoke_bedrock(
         self, template: Template

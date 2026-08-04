@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from src.handler import ConfigurationError, ProviderError
+from src.errors import ConfigurationError, ProviderError
 
 
 # ---------------------------------------------------------------------------

@@ -1,14 +1,23 @@
 """Core evaluation logic for multi-criteria LLM assessment.
 
-Evaluates each criterion independently in parallel (one LLM call per criterion),
-then returns per-criterion scores and an executive summary (総評). No score
-aggregation is applied.
+Pure evaluation building blocks: prompt construction, one-criterion scoring,
+response parsing, and result aggregation. No score aggregation across criteria is
+applied — each is independent by design.
 
-Pipeline:
-    1. :func:`build_evaluation_prompt_single_criterion` — one prompt per criterion.
-    2. :func:`_evaluate_one_criterion` — one LLM call per criterion (thread pool).
-    3. :func:`parse_single_criterion_response` — assessability, optional score, reasoning.
-    4. :func:`evaluate` — aggregate into criterion_scores, criterion_assessability, 総評.
+This module deliberately does **not** orchestrate. It used to expose an
+``evaluate()`` that drove a ``ThreadPoolExecutor`` over the criteria inside one
+Lambda; that fan-out now belongs to the Step Functions Map state, which can bound
+concurrency declaratively, retry a single criterion without re-running the rest,
+and scale past what one invocation can hold.
+
+The workflow steps in :mod:`src.handlers` compose these functions:
+
+    prepare            -> (validation and criteria resolution; see src.validation)
+    evaluate_criterion -> :func:`build_evaluation_prompt_single_criterion`
+                          :func:`_evaluate_one_criterion`
+                          :func:`parse_single_criterion_response`
+    summarize          -> :func:`build_summary_prompt`
+                          :func:`aggregate_results`
 """
 
 from __future__ import annotations
@@ -16,7 +25,6 @@ from __future__ import annotations
 import json
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING
 
 from aws_lambda_powertools import Logger
@@ -36,11 +44,6 @@ logger = Logger(service="llm-judge")
 
 # Threshold in milliseconds above which LLM call duration is logged at INFO.
 _LLM_DURATION_LOG_THRESHOLD_MS = 100
-
-# Fallback fan-out limit when the caller does not pass ``max_parallel``. The
-# deployed value comes from the MAX_PARALLEL_CRITERIA environment variable via
-# ``Config.max_parallel_criteria``.
-DEFAULT_MAX_PARALLEL_CRITERIA = 5
 
 ASSESSABILITY_ASSESSED = "assessed"
 ASSESSABILITY_NOT_ASSESSABLE = "not_assessable"
@@ -232,7 +235,7 @@ def parse_single_criterion_response(
     Raises:
         ProviderError: If the response cannot be parsed or required keys are missing.
     """
-    from src.handler import ProviderError
+    from src.errors import ProviderError
 
     cleaned = re.sub(r"^```(?:json)?\s*", "", raw_text.strip(), flags=re.IGNORECASE)
     cleaned = re.sub(r"\s*```$", "", cleaned.strip())
@@ -298,7 +301,7 @@ def parse_single_criterion_response(
     return (ASSESSABILITY_ASSESSED, score, reasoning)
 
 
-def _build_summary_prompt(
+def build_summary_prompt(
     prompt: str,
     response: str,
     results: list[tuple[str, str, float | None, str]],
@@ -356,13 +359,26 @@ Write a concise 総評 (executive summary) in Japanese that synthesises the find
 """
 
 
-def _aggregate_parallel_results(
+def aggregate_results(
     results: list[tuple[str, str, float | None, str]],
     reasoning: str,
     judge_model: str,
     provider: str,
 ) -> dict:
-    """Combine per-criterion (name, assessability, score, reasoning) into the result dict."""
+    """Combine per-criterion results into the response dict.
+
+    Args:
+        results: ``(name, assessability, score, reasoning)`` per criterion, in
+            the order the criteria file declared them.
+        reasoning: The synthesised executive summary (総評).
+        judge_model: Model that produced the judgements.
+        provider: Provider that served the model.
+
+    Returns:
+        Dict matching ``contracts/lambda-response.json``. Criteria marked
+        ``not_assessable`` are omitted from ``criterion_scores`` but retain their
+        entry in ``criterion_reasoning`` and ``criterion_assessability``.
+    """
     criterion_assessability = {name: a for name, a, _, _ in results}
     criterion_scores = {
         name: s
@@ -382,7 +398,7 @@ def _aggregate_parallel_results(
 
 
 # ---------------------------------------------------------------------------
-# Top-level orchestrator
+# Single-criterion evaluation
 # ---------------------------------------------------------------------------
 
 
@@ -441,131 +457,3 @@ def _evaluate_one_criterion(
         provider=provider_label,
     )
     return (criterion.name, assessability, score, reasoning)
-
-
-def evaluate(
-    prompt: str,
-    response: str,
-    criteria: "EvaluationCriteria",
-    provider: "BaseProvider",
-    model: str,
-    timeout: int,
-    provider_name: str = "",
-    system_prompt: str | None = None,
-    contexts: list[str] | None = None,
-    *,
-    has_prompt: bool | None = None,
-    has_response: bool | None = None,
-    prompt_descriptor: str | None = None,
-    response_descriptor: str | None = None,
-    max_parallel: int = DEFAULT_MAX_PARALLEL_CRITERIA,
-) -> dict:
-    """Run multi-criteria evaluation: one LLM call per criterion in parallel.
-
-    Args:
-        prompt: Text for the prompt role (may be empty when response-only).
-        response: Text for the response role (may be empty when prompt-only).
-        has_prompt: If None, inferred from stripped ``prompt`` being non-empty.
-        has_response: If None, inferred from stripped ``response`` being non-empty.
-        prompt_descriptor: Optional operator label for the prompt role.
-        response_descriptor: Optional operator label for the response role.
-        max_parallel: Upper bound on concurrent judge LLM calls. The effective
-            worker count is ``min(len(criteria), max_parallel)``.
-
-    Returns:
-        Dict matching ``contracts/lambda-response.json`` including
-        ``criterion_assessability``.
-    """
-    prompt_t = (prompt or "").strip()
-    response_t = (response or "").strip()
-    hp = bool(prompt_t) if has_prompt is None else has_prompt
-    hr = bool(response_t) if has_response is None else has_response
-
-    _provider_label = provider_name or provider.__class__.__module__.split(".")[-1]
-    criterion_list = criteria.criteria
-    order = {c.name: i for i, c in enumerate(criterion_list)}
-
-    # Cap the fan-out instead of letting the criteria file dictate it. A
-    # 10-criterion file previously opened 10 concurrent judge calls per
-    # invocation, which multiplied by Lambda concurrency to overrun Bedrock
-    # account quota and exhausted the botocore connection pool.
-    workers = max(1, min(len(criterion_list), max_parallel))
-
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {
-            executor.submit(
-                _evaluate_one_criterion,
-                c,
-                prompt_t,
-                response_t,
-                has_prompt=hp,
-                has_response=hr,
-                prompt_descriptor=prompt_descriptor,
-                response_descriptor=response_descriptor,
-                provider=provider,
-                model=model,
-                timeout=timeout,
-                provider_label=_provider_label,
-                system_prompt=system_prompt,
-                contexts=contexts,
-            ): c
-            for c in criterion_list
-        }
-        results: list[tuple[str, str, float | None, str]] = []
-        for fut in as_completed(futures):
-            try:
-                results.append(fut.result())
-            except Exception as exc:
-                # Deliberate fail-fast: a criterion that could not be scored is
-                # not the same as one judged "not assessable", and silently
-                # dropping it would understate the rubric while still returning
-                # a response that looks complete. The metric makes the failure
-                # visible without changing the response contract.
-                add_count(MetricName.CRITERION_EVALUATION_FAILED)
-                logger.error(
-                    "Criterion evaluation failed",
-                    extra={
-                        "criterion_name": futures[fut].name,
-                        "model": model,
-                        "error_type": type(exc).__name__,
-                    },
-                )
-                raise
-
-    results.sort(key=lambda r: order[r[0]])
-
-    not_assessable = sum(
-        1 for _, assessability, _, _ in results
-        if assessability == ASSESSABILITY_NOT_ASSESSABLE
-    )
-    if not_assessable:
-        add_count(MetricName.NOT_ASSESSABLE_COUNT, not_assessable)
-
-    summary_prompt = _build_summary_prompt(
-        prompt_t,
-        response_t,
-        results,
-        has_prompt=hp,
-        has_response=hr,
-        system_prompt=system_prompt,
-        contexts=contexts,
-        prompt_descriptor=prompt_descriptor,
-        response_descriptor=response_descriptor,
-    )
-    llm_start = time.perf_counter()
-    reasoning = provider.complete(
-        messages=[{"role": "user", "content": summary_prompt}],
-        model=model,
-        timeout=timeout,
-    )
-    llm_duration_ms = round((time.perf_counter() - llm_start) * 1000)
-    add_latency_ms(MetricName.JUDGE_LATENCY_MS, llm_duration_ms)
-    if llm_duration_ms >= _LLM_DURATION_LOG_THRESHOLD_MS:
-        logger.info(
-            "Judge LLM call completed (summary)",
-            extra={"model": model, "duration_ms": llm_duration_ms},
-        )
-
-    return _aggregate_parallel_results(
-        results, reasoning=reasoning, judge_model=model, provider=_provider_label
-    )

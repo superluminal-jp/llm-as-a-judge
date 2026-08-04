@@ -71,7 +71,7 @@ class OpenAIProvider:
             ProviderError: If the API call fails due to authentication issues,
                 rate limiting, or any other API error.
         """
-        from src.handler import ProviderError
+        from src.errors import ProviderError
 
         start = time.perf_counter()
         try:
