@@ -1,6 +1,6 @@
 # Quickstart
 
-最短で **テストを通し**、**1 回 Lambda をデプロイして呼び出す**までの手順。前提は macOS / Linux と Python 3.12 系を想定する。
+最短で **テストを通し**、**1 回デプロイして評価を実行する**までの手順。前提は macOS / Linux と Python 3.11 以降を想定する。
 
 ---
 
@@ -17,7 +17,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 pytest -q
 ```
 
-ここまでで **94 件前後のテストがすべて成功**すれば、ランタイムコードはローカル検証済み。
+ここまでで **243 件のテストがすべて成功**すれば、ランタイムコードと CDK テンプレートはローカル検証済み（このテストに Docker は不要）。
 
 ---
 
@@ -45,7 +45,7 @@ pytest -q
 ./scripts/deploy.sh --env dev --region ap-northeast-1
 ```
 
-スタック名は `LlmJudgeStack-<env>`。完了後、Lambda ARN・関数名・criteria バケット名・シークレット名などが出力される。
+スタック名は `LlmJudgeStack-<env>`。完了後、2 つのステートマシン ARN・criteria バケット名・jobs バケット名・シークレット名などが出力される。
 
 ---
 
@@ -70,35 +70,38 @@ aws secretsmanager put-secret-value \
 
 `criteria_file` を省略すると、組み込みの **Balanced（4 軸）** クライテリアが使われる。
 
-```bash
-aws lambda invoke \
-  --function-name <関数名> \
-  --region <リージョン> \
-  --cli-binary-format raw-in-base64-out \
-  --payload '{"prompt":"1+1は？","response":"2です。","provider":"bedrock"}' \
-  result.json && cat result.json
-```
-
-`result.json` は [`.gitignore`](../.gitignore) 対象。成功時は `criterion_scores`・`criterion_reasoning`・`reasoning` などが返る。
-
-クライテリア数が多い場合は **Step Functions ワークフロー**でも同じイベントを実行できる（同じレスポンスが返る）:
+**同期**（結果がその場で返る）
 
 ```bash
 aws stepfunctions start-sync-execution \
-  --state-machine-arn <StateMachineArn 出力値> \
+  --state-machine-arn <SyncStateMachineArn 出力値> \
   --region <リージョン> \
   --input '{"prompt":"1+1は？","response":"2です。","provider":"bedrock"}' \
-  --query output --output text
+  --query output --output text | jq .
 ```
 
-デプロイ後に **複数パターンをまとめて試す**場合は、リポジトリルートで `python3 scripts/lambda_pattern_tests.py`（スタック出力を自動参照、`judge_model` は `amazon.nova-lite-v1:0` 固定）。`TARGET=workflow` を付けると同じケースをワークフロー経路で実行する。
+成功時は `criterion_scores`・`criterion_reasoning`・`criterion_assessability`・`reasoning` が返る。
+
+**非同期**（クライテリア数が多い、または 5 分に収まらない場合）
+
+```bash
+aws stepfunctions start-execution \
+  --state-machine-arn <AsyncStateMachineArn 出力値> \
+  --region <リージョン> \
+  --input '{"prompt":"1+1は？","response":"2です。","provider":"bedrock"}'
+
+# 完了後、結果は jobs バケットの final/ プレフィックスに置かれる
+aws s3 ls s3://<JobsBucketName>/final/
+```
+
+デプロイ後に **複数パターンをまとめて試す**場合は、リポジトリルートで `python3 scripts/workflow_pattern_tests.py`（スタック出力を自動参照、`judge_model` は `amazon.nova-lite-v1:0` 固定）。`TARGET=async` を付けると非同期経路で実行する。
 
 ---
 
 ## 6. カスタムクライテリア（S3）
 
 1. `criteria/default.json` などを **S3 にアップロード**する。  
-2. Lambda イベントに **`criteria_file": "s3://バケット名/キー"`** を付ける。  
+2. 入力イベントに **`criteria_file": "s3://バケット名/キー"`** を付ける。  
 3. デプロイ時に **`criteria_bucket_arn`** を付けているか、またはロールに `s3:GetObject` があること。
 
 詳細は [README.md](../README.md) の「クライテリアファイル（S3）」と [criteria/README.md](../criteria/README.md)。
@@ -110,6 +113,6 @@ aws stepfunctions start-sync-execution \
 | 読むもの | 内容 |
 |----------|------|
 | [README.md](../README.md) | イベント全フィールド、環境変数、エラー種別 |
-| [architecture.md](architecture.md) | 内部の処理の流れ |
+| [architecture.md](architecture.md) | 同期／非同期の使い分け、冪等性、権限分離 |
 | [troubleshooting.md](troubleshooting.md) | 失敗時の切り分け |
 | [development.md](development.md) | テスト・開発ループ |

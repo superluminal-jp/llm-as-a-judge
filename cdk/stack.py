@@ -68,20 +68,15 @@ _INFERENCE_PROFILE_PREFIXES = frozenset(
     {"us", "us-gov", "eu", "apac", "jp", "au", "ca"}
 )
 
-# Lambda timeout. Sized for the worst case in this repository: the 10-criterion
-# AISI criteria file evaluated MAX_PARALLEL_CRITERIA at a time, plus the final
-# summary call. Must stay comfortably above REQUEST_TIMEOUT * number of waves.
+# Lambda timeout. One invocation scores one criterion, or writes one summary, so
+# this only has to cover a single model call plus its S3 round trips. Must stay
+# comfortably above REQUEST_TIMEOUT.
 _LAMBDA_TIMEOUT_SEC = 300
 
 # Per-request Bedrock/HTTP timeout handed to the runtime as REQUEST_TIMEOUT.
 # Kept well below _LAMBDA_TIMEOUT_SEC so the provider's own timeout fires first
 # and produces a diagnosable ProviderError instead of a Lambda hard kill.
 _REQUEST_TIMEOUT_SEC = 60
-
-# Upper bound on concurrent judge LLM calls within a single invocation. Caps the
-# fan-out that criteria count would otherwise dictate, protecting Bedrock quota.
-# Also used as the Map state's MaxConcurrency in the Step Functions workflow.
-_MAX_PARALLEL_CRITERIA = 5
 
 # Per-function reserved concurrency. Bounds how many invocations can run at once
 # and therefore how hard the service can push against Bedrock account quota.
@@ -467,7 +462,6 @@ class LlmJudgeStack(cdk.Stack):
             "ANTHROPIC_MODEL": "claude-sonnet-4-6",
             "OPENAI_MODEL": "gpt-4o",
             "REQUEST_TIMEOUT": str(_REQUEST_TIMEOUT_SEC),
-            "MAX_PARALLEL_CRITERIA": str(_MAX_PARALLEL_CRITERIA),
             "JOBS_BUCKET": jobs_bucket.bucket_name,
             "IDEMPOTENCY_TABLE": idempotency_table.table_name,
             "IDEMPOTENCY_EXPIRY_SECONDS": str(_IDEMPOTENCY_EXPIRY_SECONDS),

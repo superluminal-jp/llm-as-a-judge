@@ -33,7 +33,6 @@ def _make_config(
     request_timeout: int = 30,
     default_provider: str = "anthropic",
     api_keys_secret_name: str = "",
-    max_parallel_criteria: int = 5,
 ):
     from src.config import Config
 
@@ -47,7 +46,6 @@ def _make_config(
         request_timeout=request_timeout,
         log_level="INFO",
         api_keys_secret_name=api_keys_secret_name,
-        max_parallel_criteria=max_parallel_criteria,
     )
 
 
@@ -361,8 +359,9 @@ class TestBedrockClientConfiguration:
         assert client_config.retries["mode"] == "adaptive"
         assert client_config.retries["max_attempts"] == 5
 
-    def test_pool_has_a_floor(self):
-        client_config = self._captured_config(max_parallel_criteria=2)
+    def test_connection_pool_is_set_explicitly(self):
+        """Left to botocore this is 10 by accident rather than by decision."""
+        client_config = self._captured_config()
         assert client_config.max_pool_connections >= 10
 
 
@@ -397,7 +396,7 @@ class TestBedrockErrorMapping:
     def test_throttling_message_is_actionable(self):
         provider, client = self._provider_raising("ThrottlingException")
 
-        with pytest.raises(ProviderError, match="MAX_PARALLEL_CRITERIA|quota"):
+        with pytest.raises(ProviderError, match="MaxConcurrency|quota"):
             provider.complete(MESSAGES, MODEL, TIMEOUT)
 
         # botocore owns retries now; this layer calls converse exactly once.

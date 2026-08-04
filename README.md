@@ -1,10 +1,10 @@
 # LLM-as-a-Judge
 
-[![Tests](https://img.shields.io/badge/tests-201%20passing-brightgreen)](#テスト)
+[![Tests](https://img.shields.io/badge/tests-243%20passing-brightgreen)](#テスト)
 [![Python](https://img.shields.io/badge/python-3.13-blue)](https://python.org)
 [![AWS Lambda](https://img.shields.io/badge/runtime-AWS%20Lambda-orange)](https://aws.amazon.com/lambda/)
 
-LLM が生成した回答を、別の LLM を審査役（ジャッジ）として多角的に評価する AWS Lambda 関数。Anthropic・OpenAI・Amazon Bedrock をジャッジモデルとして利用可能。
+LLM が生成した回答を、別の LLM を審査役（ジャッジ）として多角的に評価する AWS Step Functions ワークフロー。Anthropic・OpenAI・Amazon Bedrock をジャッジモデルとして利用可能。
 
 各クライテリアを並列に独立評価し、段階的推論（`evaluation_steps`）によって透明性の高いスコアリングを実現する。
 
@@ -23,31 +23,33 @@ LLM が生成した回答を、別の LLM を審査役（ジャッジ）とし�
 
 ## アーキテクチャ
 
-同じイベントを受け付け、**同じレスポンス**を返す実行経路が 2 つある。
-
-**経路 1: 単一 Lambda**（`aws lambda invoke`）
+評価は **Step Functions ワークフロー**として実行される。
 
 ```
-Lambda イベント（`prompt` / `response` は少なくとも一方必須、[provider]、[criteria_file]、任意 descriptor）
-    └─→ handler.lambda_handler
-        ├─→ criteria.load_from_s3()   または   DefaultCriteria.balanced()
-        ├─→ providers.get_provider()  → AnthropicProvider / OpenAIProvider / BedrockProvider
-        └─→ evaluator.evaluate()
-              ├─→ build_evaluation_prompt_single_criterion()  ← 最大 MAX_PARALLEL_CRITERIA 並列
-              ├─→ provider.complete()
-              └─→ parse_single_criterion_response()
-                  └─→ { criterion_scores, criterion_reasoning, criterion_assessability, reasoning, judge_model, provider }
+イベント（`prompt` / `response` は少なくとも一方必須、[provider]、[criteria_file]、任意 descriptor）
+    └─→ Prepare              入力検証 → criteria 解決 → payload を S3 に退避
+        └─→ Map(MaxConcurrency)
+              └─→ EvaluateCriterion   クライテリア 1 件を評価（冪等）→ 結果を S3 に保存
+        └─→ Summarize        結果を回収 → 総評生成
+              └─→ { criterion_scores, criterion_reasoning, criterion_assessability, reasoning, judge_model, provider }
 ```
 
-**経路 2: Step Functions ワークフロー**（`aws stepfunctions start-sync-execution`）
+同じ定義から**同期・非同期の 2 つのステートマシン**をデプロイする。
 
-```
-Prepare → Map(MaxConcurrency)[EvaluateCriterion] → Summarize
-```
+| | 同期（`-sync`） | 非同期（`-async`） |
+|---|---|---|
+| 種別 | Express | Standard |
+| 起動 | `start-sync-execution` | `start-execution` |
+| 結果 | 実行結果として返る | S3（`final/<content-hash>.json`） |
+| 同時実行数 | 40 まで | Distributed Map のため制約なし |
+| 実行時間 | 5 分まで | 6 時間まで |
+| 用途 | 対話的な利用 | 大量評価・多数クライテリア |
 
-クライテリア単位のリトライ（バックオフ + FULL jitter）と失敗箇所の可視化をサービス側に任せられる。
-payload は 256KB のステート上限を避けるため S3 経由（クレームチェック）で渡す。
-クライテリア数が多い場合はこちらを使う。詳細は [docs/architecture.md](docs/architecture.md)。
+クライテリア単位のリトライ（バックオフ + FULL jitter）と失敗箇所の可視化はサービス側が担う。
+payload と結果は 256KB のステート上限を避けるため S3 経由（クレームチェック）で渡すため、
+ステートサイズは提出物サイズにもクライテリア数にも依存しない。
+ジャッジ呼び出しは内容ハッシュで冪等化され、再投入やリトライでモデルを呼び直さない。
+詳細は [docs/architecture.md](docs/architecture.md)。
 
 各クライテリアは独立した LLM 呼び出しでスコアリングされ、総合スコアは算出しない（クライテリア間の重み付けを前提としない設計）。
 
@@ -56,16 +58,18 @@ payload は 256KB のステート上限を避けるため S3 経由（クレー�
 ```
 src/
 ├── __init__.py
-├── handler.py          # 単一 Lambda エントリポイント、例外階層
-├── evaluator.py        # プロンプト構築、LLM 呼び出し、JSON パース、スコア集約
+├── errors.py           # 例外階層（全モジュール共通）
+├── validation.py       # イベント検証、モデル解決
+├── evaluator.py        # プロンプト構築、1 件評価、JSON パース、結果集約
 ├── criteria.py         # EvaluationCriteria データクラス、S3 ローダー、デフォルト定義
 ├── config.py           # 環境変数 + Secrets Manager からの Config
-├── jobs.py             # クレームチェック（S3 経由の payload 受け渡し）
+├── jobs.py             # クレームチェック、content hash、結果の保存と回収
+├── idempotency.py      # Powertools Idempotency の配線とキー生成
 ├── observability.py    # Powertools Tracer / Metrics の共有インスタンス
 ├── handlers/           # Step Functions の各ステップ
-│   ├── prepare.py             # 検証・criteria 解決・ジョブ退避
-│   ├── evaluate_criterion.py  # クライテリア 1 件の評価
-│   └── summarize.py           # 結果集約・総評生成
+│   ├── prepare.py             # 検証・criteria 解決・ジョブ退避・content hash
+│   ├── evaluate_criterion.py  # クライテリア 1 件の評価（冪等）
+│   └── summarize.py           # 結果回収・総評生成・最終結果保存
 └── providers/
     ├── __init__.py     # BaseProvider プロトコル + get_provider() ファクトリ
     ├── anthropic.py    # 同期 Anthropic クライアント
@@ -88,13 +92,13 @@ contracts/
 
 tests/
 ├── conftest.py                 # 共有フィクスチャ
-├── test_handler.py             # lambda_handler() テスト
+├── test_validation.py          # イベント検証・モデル解決テスト
 ├── test_evaluator.py           # プロンプト構築・パース・並列度上限テスト
 ├── test_criteria.py            # EvaluationCriteria・S3 ローダーテスト
 ├── test_providers.py           # プロバイダークライアント・botocore 設定テスト
 ├── test_config.py              # Secrets Manager からの API キー解決テスト
 ├── test_observability.py       # メトリクス計装テスト
-├── test_workflow_handlers.py   # ワークフロー各ステップ + 2 経路の出力一致テスト
+├── test_workflow_handlers.py   # 各ステップ・冪等性・content hash・レスポンス契約
 └── test_cdk_stack.py           # IaC アサーション + cdk-nag 検査（Docker 不要）
 
 config/
@@ -104,13 +108,13 @@ config/
 
 cdk/
 ├── app.py              # CDK App エントリポイント
-├── stack.py            # LlmJudgeStack（Lambda×4 + Step Functions + IAM/KMS/S3/SQS/CloudWatch）
+├── stack.py            # LlmJudgeStack（Lambda×3 + ステートマシン×2 + IAM/KMS/S3/SQS/DynamoDB/CloudWatch）
 └── requirements.txt    # CDK 依存関係
 
 scripts/
 ├── deploy.sh                  # cdk deploy ラッパー（bootstrap は --bootstrap 時のみ）
-└── lambda_pattern_tests.py    # デプロイ済みスタックを複数パターンで検証
-                               # （TARGET=lambda|workflow、Bedrock Nova）
+└── workflow_pattern_tests.py  # デプロイ済みスタックを複数パターンで検証
+                               # （TARGET=sync|async、Bedrock Nova）
 
 docs/
 ├── README.md              # ドキュメント索引
@@ -122,7 +126,7 @@ docs/
 └── schemas.md             # JSON 契約（`contracts/*.json`）
 ```
 
-## Lambda イベント
+## 入力イベント
 
 ```json
 {
@@ -150,7 +154,7 @@ docs/
 
 **評価モード**: 両方にテキストがあれば従来どおりペア評価。片方だけの場合は、欠けた役はジャッジ向けプロンプト上でプレースホルダに置き換えられ、クライテリアによっては `criterion_assessability` が `not_assessable` になり得る（数値スコアは `criterion_scores` に含めない）。
 
-## Lambda レスポンス
+## レスポンス
 
 ```json
 {
@@ -269,8 +273,9 @@ Lambda 実行ロールに対象バケットの `s3:GetObject` が必要（[`conf
 | `OPENAI_MODEL` | `gpt-4o` | デフォルト OpenAI ジャッジモデル |
 | `BEDROCK_MODEL` | `jp.anthropic.claude-sonnet-4-6` | デフォルト Bedrock ジャッジモデル（`config/parameters.json` から設定） |
 | `REQUEST_TIMEOUT` | `30`（CDK デプロイ時は `60`） | HTTP / Bedrock タイムアウト（秒） |
-| `MAX_PARALLEL_CRITERIA` | `5` | 1 回の評価で同時に走るジャッジ呼び出しの上限 |
-| `JOBS_BUCKET` | — | ワークフローの payload 退避先バケット。CDK が設定する |
+| `JOBS_BUCKET` | — | payload・per-criterion 結果・最終結果の置き場。CDK が設定する |
+| `IDEMPOTENCY_TABLE` | — | ジャッジ呼び出しの重複排除テーブル。CDK が設定する。未設定なら毎回評価する |
+| `IDEMPOTENCY_EXPIRY_SECONDS` | `86400` | 保存済み結果が再利用される期間 |
 | `LOG_LEVEL` | `INFO` | Powertools ログレベル |
 | `POWERTOOLS_SERVICE_NAME` | `llm-judge` | Lambda Powertools サービスタグ |
 | `POWERTOOLS_METRICS_NAMESPACE` | `LlmJudge` | EMF メトリクスの名前空間 |
@@ -374,61 +379,70 @@ Bedrock は Lambda 実行ロールの IAM 認証を使うため、この手順�
 
 ### 呼び出し
 
-**単一 Lambda 経路**
-
-```bash
-aws lambda invoke \
-  --function-name llm-judge-dev \
-  --payload '{"prompt":"機械学習とは何ですか？","response":"機械学習はAIの一分野です...","provider":"bedrock"}' \
-  --cli-binary-format raw-in-base64-out \
-  result.json && cat result.json
-```
-
-**Step Functions ワークフロー経路**（クライテリア数が多い場合）
+**同期**（結果がその場で返る。5 分・40 並列まで）
 
 ```bash
 aws stepfunctions start-sync-execution \
-  --state-machine-arn <StateMachineArn 出力値> \
+  --state-machine-arn <SyncStateMachineArn 出力値> \
   --input '{"prompt":"機械学習とは何ですか？","response":"機械学習はAIの一分野です...","provider":"bedrock"}' \
   --query output --output text
 ```
 
+**非同期**（大量評価・多数クライテリア向け。時間・並列数の制約なし）
+
+```bash
+# 実行を開始（すぐ executionArn が返る）
+aws stepfunctions start-execution \
+  --state-machine-arn <AsyncStateMachineArn 出力値> \
+  --input '{"prompt":"...","response":"...","criteria_file":"s3://<criteria-bucket>/criteria/aisi_safety_evaluation_criteria.json"}'
+
+# 完了後、結果を取得（content hash は実行出力に含まれる）
+aws s3 cp s3://<JobsBucketName>/final/<content-hash>.json - | jq .
+```
+
 どちらも同じイベントを受け付け、同じレスポンスを返す。
+同一内容の再投入はジャッジ呼び出しを冪等化されているため、モデル課金は発生しない。
 
 ## テスト
 
-201 テスト、実際の API 呼び出しなし（`unittest.mock` + `moto[s3]` でモック）。
+243 テスト、実際の API 呼び出しなし（`unittest.mock` + `moto[s3]` でモック）。
 CDK テンプレートの検証もテスト内でスタックを合成して行うため、**Docker なしで全件実行できる**：
 
 ```bash
 pytest                                         # 全テスト
-pytest tests/test_handler.py -v               # ハンドラーテスト
+pytest tests/test_validation.py -v            # イベント検証テスト
 pytest tests/test_evaluator.py -v             # 評価ロジックテスト
 pytest tests/test_criteria.py -v              # クライテリア・S3 テスト
 pytest tests/test_providers.py -v             # プロバイダーテスト
-pytest tests/test_workflow_handlers.py -v     # ワークフロー + 2 経路の出力一致
+pytest tests/test_workflow_handlers.py -v     # 各ステップ・冪等性・レスポンス契約
 pytest tests/test_cdk_stack.py -v             # IaC アサーション + cdk-nag
 pytest --cov=src --cov-report=term-missing    # カバレッジ付き
 ```
 
 ## CDK スタックリソース
 
-- **Lambda 関数 ×4**: Python 3.13 / ARM64、512 MB（prepare のみ 256 MB）、300 秒タイムアウト、
+- **Lambda 関数 ×3**: Python 3.13 / ARM64、512 MB（prepare のみ 256 MB）、300 秒タイムアウト、
   予約同時実行数 10、X-Ray 有効、JSON ログ形式。
-  直接呼び出し用 1 つ + ワークフロー用 3 つ（prepare / evaluate-criterion / summarize）
-- **Step Functions**: Express ステートマシン（Map の `MaxConcurrency` = 5、
-  スロットリング系のリトライは BackoffRate 2 / MaxAttempts 4 / FULL jitter）
+  ワークフローの各ステップ（prepare / evaluate-criterion / summarize）に 1 つずつ
+- **Step Functions ×2**: 同期用 Express（Inline Map、最大 40 並列、290 秒）と
+  非同期用 Standard（Distributed Map、6 時間）。
+  スロットリング系のリトライは BackoffRate 2 / MaxAttempts 4 / FULL jitter、
+  `ToleratedFailureCount` は 0
+- **DynamoDB**: 冪等性テーブル（オンデマンド課金、TTL 24 時間、KMS CMK 暗号化）
 - **バンドル**: CDK が公式 Python 3.13 イメージ上で `pip install` と `src/` のコピーを実行（Docker 必須）
 - **IAM**: `bedrock:InvokeModel` は `bedrock_allowed_models` で指定したモデルと
-  推論プロファイル ARN のみに限定。関数ごとにロールを分離（prepare は Bedrock に到達できず、
-  criterion worker は jobs バケットに書き込めない）
+  推論プロファイル ARN のみに限定。ステップごとにロールを分離
+  （prepare は Bedrock に到達できず、criterion worker は criteria バケットを読めず
+  DynamoDB に触れるのは criterion worker だけ。バケットレベルの `s3:List*` はどのロールも持たない）
 - **Secrets Manager**: API キー用シークレット（KMS CMK 暗号化）
-- **KMS**: 環境変数・シークレット・DLQ・アラームトピックを暗号化する CMK（自動ローテーション有効）
+- **KMS**: 環境変数・シークレット・DLQ・アラームトピック・冪等性テーブルを暗号化する CMK
+  （自動ローテーション有効）
 - **S3**: criteria バケット（暗号化・バージョニング・TLS 必須・アクセスログ）、
-  アクセスログバケット、jobs バケット（7 日で失効）
+  アクセスログバケット、jobs バケット（ジョブ payload は 7 日で失効）
 - **SQS**: 非同期呼び出し失敗用 DLQ（KMS 暗号化、14 日保持）
 - **CloudWatch**: ロググループ（保持期間 30 日 / prod 90 日）、
-  アラーム 5 件（エラー・スロットル・p99 実行時間・DLQ 滞留・ワークフロー失敗）→ SNS、
+  アラーム 6 件（エラー・スロットル・p99 実行時間・DLQ 滞留・各ワークフローの失敗）→ SNS、
   ダッシュボード
-- **Outputs**: `LambdaFunctionArn`、`LambdaFunctionName`、`StateMachineArn`、
-  `CriteriaBucketName`、`JobsBucketName`、`ApiKeysSecretName`、`DeadLetterQueueUrl`、`AlarmTopicArn`
+- **Outputs**: `SyncStateMachineArn`、`AsyncStateMachineArn`、`CriteriaBucketName`、
+  `JobsBucketName`、`IdempotencyTableName`、`ApiKeysSecretName`、`DeadLetterQueueUrl`、
+  `AlarmTopicArn`

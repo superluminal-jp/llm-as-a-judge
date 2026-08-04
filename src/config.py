@@ -36,8 +36,6 @@ Environment Variables:
                          ap-northeast-1 and ap-northeast-3).
     REQUEST_TIMEOUT:     HTTP/Bedrock request timeout in seconds (integer).
                          Defaults to ``30``.
-    MAX_PARALLEL_CRITERIA: Upper bound on concurrent judge LLM calls within a
-                         single invocation. Defaults to ``5``.
     LOG_LEVEL:           Powertools log level (``DEBUG``, ``INFO``, …).
                          Defaults to ``"INFO"``.
 """
@@ -83,7 +81,6 @@ class Config:
         log_level:         Powertools log level string.
         api_keys_secret_name: Secrets Manager secret holding the provider API
                            keys as JSON. Empty when unset.
-        max_parallel_criteria: Upper bound on concurrent judge LLM calls.
     """
 
     default_provider: str
@@ -95,7 +92,6 @@ class Config:
     request_timeout: int
     log_level: str
     api_keys_secret_name: str = ""
-    max_parallel_criteria: int = 5
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +147,6 @@ def _load_config() -> Config:
         request_timeout=_int_env("REQUEST_TIMEOUT", 30),
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
         api_keys_secret_name=os.environ.get("API_KEYS_SECRET_NAME", ""),
-        max_parallel_criteria=max(1, _int_env("MAX_PARALLEL_CRITERIA", 5)),
     )
 
 

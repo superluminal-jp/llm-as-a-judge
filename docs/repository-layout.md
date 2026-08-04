@@ -8,18 +8,20 @@
 
 | モジュール | 概要 |
 |-----------|------|
-| `handler.py` | 単一 Lambda 経路のエントリ、入力検証、例外型、評価の呼び出し |
-| `evaluator.py` | クライテリアごとのプロンプト、並列 LLM 呼び出し、パース、総評 |
+| `errors.py` | 例外階層。全モジュールが共有する単一の定義元 |
+| `validation.py` | イベント検証、モデル解決。ワークフローの最初のステップで 1 回だけ走る |
+| `evaluator.py` | クライテリアごとのプロンプト、1 件評価、パース、結果集約。**オーケストレーションは持たない** |
 | `criteria.py` | データモデル、`load_from_s3`、デフォルトクライテリア |
 | `config.py` | 環境変数と Secrets Manager からの設定（コールドスタートでキャッシュ） |
-| `jobs.py` | クレームチェック。Step Functions の 256KB 制限を避けるため payload を S3 経由で渡す |
+| `jobs.py` | クレームチェック（payload と結果の S3 退避）、content hash、結果の並列回収 |
+| `idempotency.py` | Powertools Idempotency の配線とキー生成。`IDEMPOTENCY_TABLE` 未設定時は素通し |
 | `observability.py` | Powertools `Tracer` / `Metrics` の共有インスタンスとメトリクス名 |
-| `handlers/` | Step Functions の各ステップ（`prepare` / `evaluate_criterion` / `summarize`） |
+| `handlers/` | Step Functions の各ステップ（`prepare` / `evaluate_criterion` / `summarize`）|
 | `providers/` | Anthropic / OpenAI / Bedrock の同期クライアント |
 
 `handlers/` の 3 ステップはプロンプト構築・パース・集約を自前で持たず、
-すべて `evaluator.py` の関数を再利用する。そのため単一 Lambda 経路と
-ワークフロー経路の出力は一致する（`tests/test_workflow_handlers.py` で検証）。
+すべて `evaluator.py` の関数を再利用する。ステップを分けているのは
+権限分離と失敗箇所の特定のためであって、ロジックを分けるためではない。
 
 ---
 
@@ -29,7 +31,7 @@
 
 | ファイル | 主な対象 |
 |----------|-----------|
-| `test_handler.py` | `lambda_handler`、イベント検証、例外マッピング |
+| `test_validation.py` | イベント検証、モデル解決、例外マッピング |
 | `test_evaluator.py` | プロンプト生成、パース、並列評価まわり |
 | `test_criteria.py` | `load_from_dict` / `load_from_s3`（moto）、S3 URI パース |
 | `test_providers.py` | 各プロバイダーのモックを使った呼び出し、botocore クライアント設定、エラー処理 |
@@ -100,10 +102,11 @@ cdk deploy LlmJudgeStack-dev --app "python3 cdk/app.py" --require-approval never
 
 ### スタックの出力
 
-- `LambdaFunctionArn` / `LambdaFunctionName` — 単一 Lambda 経路の関数
-- `StateMachineArn` — ワークフロー経路のステートマシン（`start-sync-execution` で呼ぶ）
+- `SyncStateMachineArn` — 同期実行用（Express、`start-sync-execution`）
+- `AsyncStateMachineArn` — 非同期実行用（Standard、`start-execution`）
 - `CriteriaBucketName` — クライテリア JSON 置き場
-- `JobsBucketName` — ワークフローの payload 退避先
+- `JobsBucketName` — payload・per-criterion 結果・最終結果の置き場
+- `IdempotencyTableName` — ジャッジ呼び出しの重複排除テーブル
 - `ApiKeysSecretName` — Anthropic / OpenAI の API キーを入れるシークレット
 - `DeadLetterQueueUrl` — 非同期呼び出し失敗の退避先
 - `AlarmTopicArn` — アラーム通知先 SNS トピック

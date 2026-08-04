@@ -21,10 +21,9 @@ Client configuration
       this module used to carry, which blocked in ``time.sleep`` on billed
       Lambda time and — incorrectly — retried ``AccessDeniedException``, an
       error that never becomes transient.
-    * **Connection pool.** The evaluator issues one concurrent call per
-      criterion. botocore's default pool of 10 connections throttled the
-      10-criterion criteria file at the HTTP layer, so the pool is sized from
-      ``MAX_PARALLEL_CRITERIA``.
+    * **Connection pool.** botocore defaults to 10 connections. One invocation
+      now scores a single criterion, so the default is ample, but it is set
+      explicitly here so that the value is a decision rather than an accident.
 """
 
 from __future__ import annotations
@@ -44,9 +43,10 @@ if TYPE_CHECKING:
 
 logger = Logger(service="llm-judge")
 
-# Connection-pool floor. Keeps small deployments from being pool-bound even
-# when MAX_PARALLEL_CRITERIA is set low.
-_MIN_POOL_CONNECTIONS = 10
+# Connections per client. A criterion worker makes one model call per
+# invocation, so this is headroom rather than a constraint; the real
+# concurrency control is the Map state's MaxConcurrency.
+_POOL_CONNECTIONS = 10
 
 # Connect timeouts should be short — a slow TCP handshake indicates a network
 # problem, not a slow model — while read timeouts track the model's think time.
@@ -73,9 +73,8 @@ class BedrockProvider:
 
         Args:
             config: Application configuration. ``request_timeout`` drives the
-                    botocore socket timeouts and ``max_parallel_criteria``
-                    sizes the connection pool. Bedrock itself authenticates
-                    with IAM credentials from the execution role.
+                    botocore socket timeouts. Bedrock itself authenticates with
+                    IAM credentials from the execution role.
         """
         client_config = botocore.config.Config(
             read_timeout=config.request_timeout,
@@ -83,9 +82,7 @@ class BedrockProvider:
             # Adaptive mode layers client-side rate limiting over exponential
             # backoff, which is what Bedrock throttling calls for.
             retries={"max_attempts": 5, "mode": "adaptive"},
-            max_pool_connections=max(
-                _MIN_POOL_CONNECTIONS, config.max_parallel_criteria
-            ),
+            max_pool_connections=_POOL_CONNECTIONS,
         )
 
         # Cold-start: Bedrock client initialized once per Lambda container.
@@ -182,8 +179,8 @@ class BedrockProvider:
                 raise ProviderError(
                     f"Bedrock throttled the request for model '{model}' and "
                     f"client-side retries were exhausted [{error_code}]: "
-                    f"{error_message}. Lower MAX_PARALLEL_CRITERIA or request a "
-                    "quota increase."
+                    f"{error_message}. Lower the Map state's MaxConcurrency or "
+                    "request a quota increase."
                 ) from exc
 
             if error_code == "AccessDeniedException":

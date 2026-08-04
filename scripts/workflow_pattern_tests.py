@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 """Run multiple invocation patterns against a deployed LlmJudgeStack.
 
-Exercises both entry points with the same cases: the single-Lambda path and the
-Step Functions Express workflow. Both must accept identical events and return
-identical response shapes, so running with ``TARGET=workflow`` after
-``TARGET=lambda`` is the end-to-end check that the two stay in step.
+Exercises both workflows with the same cases. The synchronous (Express) and
+asynchronous (Standard) state machines share one definition, so running
+``TARGET=async`` after ``TARGET=sync`` is the end-to-end check that they stay in
+step and that the response is identical whichever way it was produced.
 
 Uses Bedrock with ``amazon.nova-lite-v1:0`` in each payload (on-demand model).
 
 Environment:
-    AWS_REGION           Override region (default: config/parameters.json ``aws_region``).
-    ENVIRONMENT          Environment suffix used to build the stack name
-                         (default: config/parameters.json ``environment``).
-    STACK_NAME           Skip the ``LlmJudgeStack-<environment>`` convention.
-    TARGET               ``lambda`` (default) or ``workflow``.
-    LAMBDA_FUNCTION_NAME Skip the CloudFormation output lookup.
-    STATE_MACHINE_ARN    Skip the CloudFormation output lookup.
+    AWS_REGION            Override region (default: config/parameters.json ``aws_region``).
+    ENVIRONMENT           Environment suffix used to build the stack name
+                          (default: config/parameters.json ``environment``).
+    STACK_NAME            Skip the ``LlmJudgeStack-<environment>`` convention.
+    TARGET                ``sync`` (default) or ``async``.
+    STATE_MACHINE_ARN     Skip the CloudFormation output lookup.
+    ASYNC_POLL_TIMEOUT    Seconds to wait for an async execution (default 600).
 
 Usage (from repo root)::
 
-    python3 scripts/lambda_pattern_tests.py
-    TARGET=workflow python3 scripts/lambda_pattern_tests.py
+    python3 scripts/workflow_pattern_tests.py
+    TARGET=async python3 scripts/workflow_pattern_tests.py
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -61,46 +62,69 @@ def _stack_outputs(region: str, environment: str) -> dict[str, str]:
     return {str(o["OutputKey"]): str(o["OutputValue"]) for o in outputs}
 
 
-def _invoke_lambda(
-    client: Any,
-    name: str,
-    payload: dict[str, Any],
-) -> tuple[dict[str, Any], str | None]:
-    """Invoke the single-Lambda path and return ``(body, function_error)``."""
-    raw = client.invoke(
-        FunctionName=name,
-        InvocationType="RequestResponse",
-        Payload=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+def _failure(raw: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """Normalise a failed execution into the ``(body, error)`` shape used below."""
+    error = str(raw.get("error", "ExecutionFailed"))
+    return (
+        {"errorType": error, "errorMessage": str(raw.get("cause", ""))[:2000]},
+        error,
     )
-    err = raw.get("FunctionError")
-    body = json.loads(raw["Payload"].read().decode("utf-8"))
-    return body, err
 
 
-def _invoke_workflow(
+def _invoke_sync(
     client: Any,
     state_machine_arn: str,
     payload: dict[str, Any],
 ) -> tuple[dict[str, Any], str | None]:
-    """Run the Express workflow synchronously.
-
-    Normalises the Step Functions result into the same ``(body, error)`` shape
-    ``_invoke_lambda`` returns, so both entry points run through the identical
-    set of assertions below.
-    """
+    """Run the Express workflow and return its output directly."""
     raw = client.start_sync_execution(
         stateMachineArn=state_machine_arn,
         input=json.dumps(payload, ensure_ascii=False),
     )
     if raw.get("status") != "SUCCEEDED":
-        return (
-            {
-                "errorType": str(raw.get("error", "ExecutionFailed")),
-                "errorMessage": str(raw.get("cause", ""))[:2000],
-            },
-            str(raw.get("error", "ExecutionFailed")),
-        )
+        return _failure(raw)
     return json.loads(raw["output"]), None
+
+
+def _invoke_async(
+    client: Any,
+    state_machine_arn: str,
+    payload: dict[str, Any],
+    poll_timeout: int,
+) -> tuple[dict[str, Any], str | None]:
+    """Start the Standard workflow and poll until it settles.
+
+    Polling exists only so that this script can assert on a result; real callers
+    of the asynchronous workflow collect it from the jobs bucket instead.
+    """
+    started = client.start_execution(
+        stateMachineArn=state_machine_arn,
+        input=json.dumps(payload, ensure_ascii=False),
+    )
+    execution_arn = started["executionArn"]
+
+    deadline = time.monotonic() + poll_timeout
+    while True:
+        described = client.describe_execution(executionArn=execution_arn)
+        status = described["status"]
+        if status != "RUNNING":
+            break
+        if time.monotonic() > deadline:
+            return (
+                {
+                    "errorType": "PollTimeout",
+                    "errorMessage": (
+                        f"execution still RUNNING after {poll_timeout}s: "
+                        f"{execution_arn}"
+                    ),
+                },
+                "PollTimeout",
+            )
+        time.sleep(2)
+
+    if status != "SUCCEEDED":
+        return _failure(described)
+    return json.loads(described["output"]), None
 
 
 def main() -> int:
@@ -109,9 +133,9 @@ def main() -> int:
     environment = os.environ.get(
         "ENVIRONMENT", str(params.get("environment", "dev") or "dev")
     )
-    target = os.environ.get("TARGET", "lambda").strip().lower()
-    if target not in ("lambda", "workflow"):
-        print(f"TARGET must be 'lambda' or 'workflow', got {target!r}", file=sys.stderr)
+    target = os.environ.get("TARGET", "sync").strip().lower()
+    if target not in ("sync", "async"):
+        print(f"TARGET must be 'sync' or 'async', got {target!r}", file=sys.stderr)
         return 2
 
     import boto3
@@ -124,30 +148,28 @@ def main() -> int:
         str(params.get("criteria_bucket_arn", "") or "")
     )
 
-    if target == "workflow":
-        state_machine_arn = os.environ.get("STATE_MACHINE_ARN") or outputs.get(
-            "StateMachineArn", ""
-        )
-        if not state_machine_arn:
-            print("StateMachineArn output missing on the stack", file=sys.stderr)
-            return 2
-        sfn_client = boto3.client("stepfunctions", region_name=region)
-        target_label = state_machine_arn.rsplit(":", 1)[-1]
+    output_key = "SyncStateMachineArn" if target == "sync" else "AsyncStateMachineArn"
+    state_machine_arn = os.environ.get("STATE_MACHINE_ARN") or outputs.get(
+        output_key, ""
+    )
+    if not state_machine_arn:
+        print(f"{output_key} output missing on the stack", file=sys.stderr)
+        return 2
+
+    sfn_client = boto3.client("stepfunctions", region_name=region)
+    target_label = state_machine_arn.rsplit(":", 1)[-1]
+    poll_timeout = int(os.environ.get("ASYNC_POLL_TIMEOUT", "600"))
+
+    if target == "sync":
 
         def run(payload: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
-            return _invoke_workflow(sfn_client, state_machine_arn, payload)
+            return _invoke_sync(sfn_client, state_machine_arn, payload)
     else:
-        fn = os.environ.get("LAMBDA_FUNCTION_NAME", "").strip() or outputs.get(
-            "LambdaFunctionName", ""
-        )
-        if not fn:
-            print("LambdaFunctionName output missing on the stack", file=sys.stderr)
-            return 2
-        lambda_client = boto3.client("lambda", region_name=region)
-        target_label = fn
 
         def run(payload: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
-            return _invoke_lambda(lambda_client, fn, payload)
+            return _invoke_async(
+                sfn_client, state_machine_arn, payload, poll_timeout
+            )
 
     base_paired = {
         "prompt": "要約してください: 水はH2Oです。",

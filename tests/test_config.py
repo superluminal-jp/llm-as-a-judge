@@ -27,7 +27,6 @@ def _make_config(**overrides):
         "request_timeout": 30,
         "log_level": "INFO",
         "api_keys_secret_name": "",
-        "max_parallel_criteria": 5,
     }
     kwargs.update(overrides)
     return Config(**kwargs)
@@ -45,25 +44,22 @@ class TestLoadConfig:
         from src.config import _load_config
 
         monkeypatch.setenv("API_KEYS_SECRET_NAME", "llm-judge-dev/api-keys")
-        monkeypatch.setenv("MAX_PARALLEL_CRITERIA", "3")
         monkeypatch.setenv("REQUEST_TIMEOUT", "60")
 
         config = _load_config()
 
         assert config.api_keys_secret_name == "llm-judge-dev/api-keys"
-        assert config.max_parallel_criteria == 3
         assert config.request_timeout == 60
 
     def test_defaults_when_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from src.config import _load_config
 
-        for name in ("API_KEYS_SECRET_NAME", "MAX_PARALLEL_CRITERIA", "REQUEST_TIMEOUT"):
+        for name in ("API_KEYS_SECRET_NAME", "REQUEST_TIMEOUT"):
             monkeypatch.delenv(name, raising=False)
 
         config = _load_config()
 
         assert config.api_keys_secret_name == ""
-        assert config.max_parallel_criteria == 5
         assert config.request_timeout == 30
 
     def test_invalid_integers_fall_back_to_defaults(
@@ -71,23 +67,12 @@ class TestLoadConfig:
     ) -> None:
         from src.config import _load_config
 
-        monkeypatch.setenv("MAX_PARALLEL_CRITERIA", "not-a-number")
         monkeypatch.setenv("REQUEST_TIMEOUT", "")
 
         config = _load_config()
 
-        assert config.max_parallel_criteria == 5
         assert config.request_timeout == 30
 
-    def test_parallelism_floor_is_one(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """A zero or negative value would make ThreadPoolExecutor raise."""
-        from src.config import _load_config
-
-        monkeypatch.setenv("MAX_PARALLEL_CRITERIA", "0")
-        assert _load_config().max_parallel_criteria == 1
-
-        monkeypatch.setenv("MAX_PARALLEL_CRITERIA", "-4")
-        assert _load_config().max_parallel_criteria == 1
 
 
 # ---------------------------------------------------------------------------
