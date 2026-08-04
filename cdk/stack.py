@@ -47,6 +47,7 @@ import os
 import aws_cdk as cdk
 import aws_cdk.aws_cloudwatch as cloudwatch
 import aws_cdk.aws_cloudwatch_actions as cw_actions
+import aws_cdk.aws_dynamodb as dynamodb
 import aws_cdk.aws_iam as iam
 import aws_cdk.aws_kms as kms
 import aws_cdk.aws_lambda as lambda_
@@ -90,10 +91,33 @@ _RESERVED_CONCURRENCY = 10
 # a failed execution, short enough that submitted material is not retained.
 _JOB_RETENTION_DAYS = 7
 
-# Express workflows are capped at 5 minutes; this keeps the state machine's own
-# timeout just inside that so a hung execution fails as a timeout rather than
-# being cut off by the service limit.
-_STATE_MACHINE_TIMEOUT_SEC = 290
+# Express workflows are capped at 5 minutes; this keeps the synchronous state
+# machine's own timeout just inside that so a hung execution fails as a timeout
+# rather than being cut off by the service limit.
+_SYNC_TIMEOUT_SEC = 290
+
+# The asynchronous workflow is Standard, so it is not bound by the Express
+# ceiling. The limit here exists to stop a stuck execution running indefinitely.
+_ASYNC_TIMEOUT_HOURS = 6
+
+# Inline Map tops out at 40 concurrent iterations. The synchronous workflow uses
+# an inline Map (it must fit inside 5 minutes anyway), so its concurrency is
+# clamped to that; the asynchronous workflow uses a Distributed Map and is not.
+_INLINE_MAP_MAX_CONCURRENCY = 40
+
+# Concurrency for the asynchronous workflow. Higher than the synchronous path
+# because that is the whole point of it, but still finite: this is the main
+# lever on how hard the service pushes Bedrock account quota.
+_ASYNC_MAP_CONCURRENCY = 40
+
+# How long a stored per-criterion result satisfies a repeat request. Must stay
+# below _RESULT_RETENTION_DAYS, or a cached hit could point at an expired
+# object.
+_IDEMPOTENCY_EXPIRY_SECONDS = 24 * 60 * 60
+
+# Retention for per-criterion and final results. Longer than the staged job
+# payloads: results are what callers come back for.
+_RESULT_RETENTION_DAYS = 30
 
 # Per-criterion retry policy, applied to the Map state. Backoff happens between
 # Lambda invocations, so a throttled criterion costs no billed execution time.
@@ -327,6 +351,36 @@ class LlmJudgeStack(cdk.Stack):
         )
 
         # -----------------------------------------------------------------
+        # DynamoDB — idempotency store
+        # -----------------------------------------------------------------
+        # Each evaluation costs N+1 model calls, so a retried Map branch or a
+        # resubmitted request is real money. Powertools keys stored results on
+        # the evaluation's content hash plus criterion and model, and DynamoDB's
+        # own TTL expires them — nothing here sweeps the table.
+
+        idempotency_table = dynamodb.Table(
+            self,
+            "IdempotencyTable",
+            table_name=f"{resource_prefix}-idempotency",
+            partition_key=dynamodb.Attribute(
+                name="id", type=dynamodb.AttributeType.STRING
+            ),
+            # The attribute Powertools writes its expiry timestamp to.
+            time_to_live_attribute="expiration",
+            # Evaluation volume is bursty and hard to forecast, which is what
+            # on-demand billing is for.
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            encryption=dynamodb.TableEncryption.CUSTOMER_MANAGED,
+            encryption_key=encryption_key,
+            point_in_time_recovery_specification=dynamodb.PointInTimeRecoverySpecification(
+                point_in_time_recovery_enabled=is_production
+            ),
+            removal_policy=(
+                cdk.RemovalPolicy.RETAIN if is_production else cdk.RemovalPolicy.DESTROY
+            ),
+        )
+
+        # -----------------------------------------------------------------
         # S3 — jobs bucket (claim-check payload staging)
         # -----------------------------------------------------------------
         # Step Functions caps inter-state data at 256 KB, so the prepare step
@@ -415,6 +469,8 @@ class LlmJudgeStack(cdk.Stack):
             "REQUEST_TIMEOUT": str(_REQUEST_TIMEOUT_SEC),
             "MAX_PARALLEL_CRITERIA": str(_MAX_PARALLEL_CRITERIA),
             "JOBS_BUCKET": jobs_bucket.bucket_name,
+            "IDEMPOTENCY_TABLE": idempotency_table.table_name,
+            "IDEMPOTENCY_EXPIRY_SECONDS": str(_IDEMPOTENCY_EXPIRY_SECONDS),
             # Anthropic / OpenAI API keys are read from this secret at
             # runtime. They are never stored as environment variables.
             "API_KEYS_SECRET_NAME": api_keys_secret.secret_name,
@@ -534,6 +590,9 @@ class LlmJudgeStack(cdk.Stack):
         # needs to read the criteria bucket.
         prepare_function.add_to_role_policy(criteria_read_statement)
 
+        # Only the criterion worker deduplicates, so only it touches the table.
+        idempotency_table.grant_read_write_data(evaluate_criterion_function)
+
         # Jobs bucket: prepare stages the payload, the other two read it back.
         # Written out rather than using grant_put/grant_read, which also hand out
         # bucket-level s3:List* and s3:GetBucket*. Every access here is by a key
@@ -552,6 +611,18 @@ class LlmJudgeStack(cdk.Stack):
                     sid="S3GetJobPayload",
                     effect=iam.Effect.ALLOW,
                     actions=["s3:GetObject"],
+                    resources=[jobs_bucket.arn_for_objects("*")],
+                )
+            )
+
+        # The criterion worker stores per-criterion results; summarize stores
+        # the assembled response so asynchronous callers can collect it.
+        for result_writer in (evaluate_criterion_function, summarize_function):
+            result_writer.add_to_role_policy(
+                iam.PolicyStatement(
+                    sid="S3PutResult",
+                    effect=iam.Effect.ALLOW,
+                    actions=["s3:PutObject"],
                     resources=[jobs_bucket.arn_for_objects("*")],
                 )
             )
@@ -575,16 +646,42 @@ class LlmJudgeStack(cdk.Stack):
             encryption_key.grant_decrypt(workflow_function)
 
         # -----------------------------------------------------------------
-        # Step Functions — Express workflow
+        # Step Functions — synchronous and asynchronous workflows
         # -----------------------------------------------------------------
+        # Same definition, two shapes. Express answers the caller directly but
+        # is capped at five minutes and 40 inline Map iterations; Standard has
+        # neither ceiling and is what carries large criteria sets and bulk
+        # submission, with results collected from S3.
 
-        state_machine = self._build_state_machine(
-            resource_prefix=resource_prefix,
+        sync_state_machine = self._build_workflow(
+            construct_id="EvaluationWorkflowSync",
+            state_machine_name=f"{resource_prefix}-sync",
+            state_machine_type=sfn.StateMachineType.EXPRESS,
+            distributed=False,
+            max_concurrency=min(
+                _ASYNC_MAP_CONCURRENCY, _INLINE_MAP_MAX_CONCURRENCY
+            ),
+            timeout=cdk.Duration.seconds(_SYNC_TIMEOUT_SEC),
             is_production=is_production,
             prepare_function=prepare_function,
             evaluate_criterion_function=evaluate_criterion_function,
             summarize_function=summarize_function,
         )
+
+        async_state_machine = self._build_workflow(
+            construct_id="EvaluationWorkflowAsync",
+            state_machine_name=f"{resource_prefix}-async",
+            state_machine_type=sfn.StateMachineType.STANDARD,
+            distributed=True,
+            max_concurrency=_ASYNC_MAP_CONCURRENCY,
+            timeout=cdk.Duration.hours(_ASYNC_TIMEOUT_HOURS),
+            is_production=is_production,
+            prepare_function=prepare_function,
+            evaluate_criterion_function=evaluate_criterion_function,
+            summarize_function=summarize_function,
+        )
+
+        state_machines = (sync_state_machine, async_state_machine)
 
         # -----------------------------------------------------------------
         # CloudWatch — alarm topic, alarms, dashboard
@@ -681,22 +778,25 @@ class LlmJudgeStack(cdk.Stack):
                 ),
                 treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
             ),
-            cloudwatch.Alarm(
-                self,
-                "WorkflowFailuresAlarm",
-                alarm_name=f"{resource_prefix}-workflow-failures",
-                alarm_description=(
-                    "A LLM-as-a-Judge Step Functions execution failed. Check the "
-                    "execution history for the criterion that could not be scored."
-                ),
-                metric=state_machine.metric_failed(period=cdk.Duration.minutes(5)),
-                threshold=1,
-                evaluation_periods=1,
-                comparison_operator=(
-                    cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD
-                ),
-                treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
-            ),
+            *[
+                cloudwatch.Alarm(
+                    self,
+                    f"{machine.node.id}FailuresAlarm",
+                    alarm_name=f"{machine.state_machine_name}-failures",
+                    alarm_description=(
+                        "A LLM-as-a-Judge execution failed. Check the execution "
+                        "history for the criterion that could not be scored."
+                    ),
+                    metric=machine.metric_failed(period=cdk.Duration.minutes(5)),
+                    threshold=1,
+                    evaluation_periods=1,
+                    comparison_operator=(
+                        cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD
+                    ),
+                    treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+                )
+                for machine in state_machines
+            ],
         ]
 
         for alarm in alarms:
@@ -753,16 +853,19 @@ class LlmJudgeStack(cdk.Stack):
                 ],
                 width=12,
             ),
-            cloudwatch.GraphWidget(
-                title="Workflow executions",
-                left=[
-                    state_machine.metric_started(),
-                    state_machine.metric_succeeded(),
-                    state_machine.metric_failed(),
-                    state_machine.metric_throttled(),
-                ],
-                width=12,
-            ),
+            *[
+                cloudwatch.GraphWidget(
+                    title=f"Workflow executions ({machine.node.id})",
+                    left=[
+                        machine.metric_started(),
+                        machine.metric_succeeded(),
+                        machine.metric_failed(),
+                        machine.metric_throttled(),
+                    ],
+                    width=12,
+                )
+                for machine in state_machines
+            ],
         )
 
         # -----------------------------------------------------------------
@@ -802,13 +905,36 @@ class LlmJudgeStack(cdk.Stack):
 
         cdk.CfnOutput(
             self,
-            "StateMachineArn",
-            value=state_machine.state_machine_arn,
+            "SyncStateMachineArn",
+            value=sync_state_machine.state_machine_arn,
             description=(
-                "Express state machine for the fan-out evaluation workflow. "
-                "Invoke with: aws stepfunctions start-sync-execution."
+                "Express workflow returning the evaluation to the caller. "
+                "Invoke with: aws stepfunctions start-sync-execution. "
+                "Capped at 5 minutes per execution."
             ),
-            export_name=f"{resource_prefix}-workflow-arn",
+            export_name=f"{resource_prefix}-sync-workflow-arn",
+        )
+
+        cdk.CfnOutput(
+            self,
+            "AsyncStateMachineArn",
+            value=async_state_machine.state_machine_arn,
+            description=(
+                "Standard workflow for large criteria sets and bulk submission. "
+                "Invoke with: aws stepfunctions start-execution. Results are "
+                "written to final/<content-hash>.json in the jobs bucket."
+            ),
+            export_name=f"{resource_prefix}-async-workflow-arn",
+        )
+
+        cdk.CfnOutput(
+            self,
+            "IdempotencyTableName",
+            value=idempotency_table.table_name,
+            description=(
+                "DynamoDB table deduplicating per-criterion judge calls. "
+                f"Entries expire after {_IDEMPOTENCY_EXPIRY_SECONDS} seconds."
+            ),
         )
 
         cdk.CfnOutput(
@@ -873,23 +999,45 @@ class LlmJudgeStack(cdk.Stack):
                 apply_to_children=True,
             )
 
+        for machine in state_machines:
+            NagSuppressions.add_resource_suppressions(
+                machine,
+                [
+                    {
+                        "id": "AwsSolutions-IAM5",
+                        "reason": (
+                            "The execution role's wildcards are generated by "
+                            "the CDK and have no narrower form: "
+                            "lambda:InvokeFunction is granted on "
+                            "<function-arn>:* to cover published versions and "
+                            "aliases of the three named workflow functions; "
+                            "the Distributed Map's states:StartExecution and "
+                            "states:RedriveExecution target this state machine "
+                            "and its child executions, whose ARNs are not "
+                            "known at synth time; and the X-Ray and CloudWatch "
+                            "Logs delivery actions required for tracing and "
+                            "vended logs are defined by AWS as "
+                            "resource-independent."
+                        ),
+                    },
+                ],
+                apply_to_children=True,
+            )
+
         NagSuppressions.add_resource_suppressions(
-            state_machine,
+            idempotency_table,
             [
                 {
-                    "id": "AwsSolutions-IAM5",
+                    "id": "AwsSolutions-DDB3",
                     "reason": (
-                        "The execution role's wildcards are generated by the CDK "
-                        "and have no narrower form: lambda:InvokeFunction is "
-                        "granted on <function-arn>:* to cover published "
-                        "versions and aliases of the three named workflow "
-                        "functions, and the X-Ray and CloudWatch Logs delivery "
-                        "actions required for tracing and vended logs are "
-                        "defined by AWS as resource-independent."
+                        "Point-in-time recovery is enabled in production and "
+                        "deliberately not elsewhere. The table holds a "
+                        "deduplication cache whose entries expire on TTL "
+                        "within a day; losing it costs repeated model calls, "
+                        "not data, and the authoritative results live in S3."
                     ),
                 },
             ],
-            apply_to_children=True,
         )
 
         NagSuppressions.add_resource_suppressions(
@@ -974,8 +1122,10 @@ class LlmJudgeStack(cdk.Stack):
         self.prepare_function = prepare_function
         self.evaluate_criterion_function = evaluate_criterion_function
         self.summarize_function = summarize_function
-        self.state_machine = state_machine
+        self.sync_state_machine = sync_state_machine
+        self.async_state_machine = async_state_machine
         self.jobs_bucket = jobs_bucket
+        self.idempotency_table = idempotency_table
         self.criteria_bucket = criteria_bucket
         self.encryption_key = encryption_key
         self.dead_letter_queue = dead_letter_queue
@@ -985,39 +1135,60 @@ class LlmJudgeStack(cdk.Stack):
     # Step Functions
     # ------------------------------------------------------------------
 
-    def _build_state_machine(
+    def _build_workflow(
         self,
         *,
-        resource_prefix: str,
+        construct_id: str,
+        state_machine_name: str,
+        state_machine_type: sfn.StateMachineType,
+        distributed: bool,
+        max_concurrency: int,
+        timeout: cdk.Duration,
         is_production: bool,
         prepare_function: lambda_.IFunction,
         evaluate_criterion_function: lambda_.IFunction,
         summarize_function: lambda_.IFunction,
     ) -> sfn.StateMachine:
-        """Build the Express workflow that fans criteria out across Lambdas.
+        """Build one evaluation workflow.
 
-        Shape::
+        Two are deployed from this one definition, because the two things
+        callers want are in tension:
+
+        * **Synchronous** (Express + inline Map). ``StartSyncExecution`` returns
+          the evaluation to the caller, but Express caps an execution at five
+          minutes and an inline Map at 40 concurrent iterations. Suits
+          interactive use and modest criteria counts.
+        * **Asynchronous** (Standard + Distributed Map). No five-minute ceiling
+          and no inline concurrency cap, so it carries large criteria sets and
+          high submission volume. The caller gets an execution ARN and collects
+          the result from S3.
+
+        Shape in both cases::
 
             Prepare -> Map(MaxConcurrency)[EvaluateCriterion] -> Summarize
 
-        Express (rather than Standard) keeps the request/response contract: the
-        caller uses ``StartSyncExecution`` and gets the evaluation back, matching
-        how the direct-invoke Lambda behaves today. The 5-minute Express ceiling
-        is the binding constraint on how many criteria one execution can carry.
+        States belong to exactly one state machine graph, so this constructs a
+        fresh set per call rather than sharing them.
 
         Args:
-            resource_prefix: Name prefix shared by this stack's resources.
-            is_production:   Selects log retention and removal policy.
-            prepare_function: Validates and stages the request.
+            construct_id:        Logical ID prefix for the states and machine.
+            state_machine_name:  Physical name.
+            state_machine_type:  EXPRESS or STANDARD.
+            distributed:         Use a Distributed Map instead of an inline one.
+            max_concurrency:     Concurrent criteria per execution.
+            timeout:             Execution timeout.
+            is_production:       Selects log retention and removal policy.
+            prepare_function:    Validates and stages the request.
             evaluate_criterion_function: Scores one criterion.
-            summarize_function: Aggregates results into the final response.
+            summarize_function:  Aggregates results into the final response.
 
         Returns:
-            The configured :class:`~aws_cdk.aws_stepfunctions.StateMachine`.
+            The configured state machine.
         """
         prepare = tasks.LambdaInvoke(
             self,
-            "Prepare",
+            f"{construct_id}Prepare",
+            state_name="Prepare",
             lambda_function=prepare_function,
             # Unwrap the Lambda envelope so downstream states see the handler's
             # return value directly.
@@ -1026,20 +1197,38 @@ class LlmJudgeStack(cdk.Stack):
 
         evaluate_criterion = tasks.LambdaInvoke(
             self,
-            "EvaluateCriterion",
+            f"{construct_id}EvaluateCriterion",
+            state_name="EvaluateCriterion",
             lambda_function=evaluate_criterion_function,
             payload_response_only=True,
         )
 
-        evaluate_map = sfn.Map(
-            self,
-            "EvaluateCriteria",
-            items_path=sfn.JsonPath.string_at("$.items"),
+        map_kwargs: dict = {
+            "state_name": "EvaluateCriteria",
+            "items_path": sfn.JsonPath.string_at("$.items"),
             # Hard cap on concurrent Bedrock calls, declared in the workflow
             # rather than left to whatever the caller passes at runtime.
-            max_concurrency=_MAX_PARALLEL_CRITERIA,
-            result_path="$.results",
-        )
+            "max_concurrency": max_concurrency,
+            "result_path": "$.results",
+        }
+
+        evaluate_map: sfn.Map | sfn.DistributedMap
+        if distributed:
+            evaluate_map = sfn.DistributedMap(
+                self,
+                f"{construct_id}EvaluateCriteria",
+                # Child executions are Express: they are short and numerous,
+                # which is exactly the workload Express is priced for.
+                map_execution_type=sfn.StateMachineType.EXPRESS,
+                # A criterion that cannot be scored is not the same as one
+                # judged "not assessable"; tolerating failures here would return
+                # a response that looks complete while understating the rubric.
+                tolerated_failure_count=0,
+                **map_kwargs,
+            )
+        else:
+            evaluate_map = sfn.Map(self, f"{construct_id}EvaluateCriteria", **map_kwargs)
+
         evaluate_map.item_processor(evaluate_criterion)
 
         # Retry the whole Map branch rather than individual criteria inside the
@@ -1056,7 +1245,8 @@ class LlmJudgeStack(cdk.Stack):
 
         summarize = tasks.LambdaInvoke(
             self,
-            "Summarize",
+            f"{construct_id}Summarize",
+            state_name="Summarize",
             lambda_function=summarize_function,
             payload=sfn.TaskInput.from_object(
                 {
@@ -1076,8 +1266,8 @@ class LlmJudgeStack(cdk.Stack):
 
         workflow_log_group = logs.LogGroup(
             self,
-            "WorkflowLogGroup",
-            log_group_name=f"/aws/vendedlogs/states/{resource_prefix}",
+            f"{construct_id}LogGroup",
+            log_group_name=f"/aws/vendedlogs/states/{state_machine_name}",
             retention=(
                 logs.RetentionDays.THREE_MONTHS
                 if is_production
@@ -1090,21 +1280,21 @@ class LlmJudgeStack(cdk.Stack):
 
         return sfn.StateMachine(
             self,
-            "EvaluationWorkflow",
-            state_machine_name=f"{resource_prefix}-workflow",
-            state_machine_type=sfn.StateMachineType.EXPRESS,
+            construct_id,
+            state_machine_name=state_machine_name,
+            state_machine_type=state_machine_type,
             definition_body=sfn.DefinitionBody.from_chainable(
                 prepare.next(evaluate_map.next(summarize))
             ),
-            timeout=cdk.Duration.seconds(_STATE_MACHINE_TIMEOUT_SEC),
+            timeout=timeout,
             tracing_enabled=True,
             logs=sfn.LogOptions(
                 destination=workflow_log_group,
                 level=sfn.LogLevel.ALL,
-                # The state carries the judge's per-criterion reasoning, which
-                # quotes the submitted material. Logging execution data would
-                # copy that into CloudWatch Logs; the state machine's structure
-                # is observable without it.
+                # The state carries per-criterion pointers and the final
+                # response, which quotes the submitted material. Logging
+                # execution data would copy that into CloudWatch Logs; the
+                # workflow's structure is observable without it.
                 include_execution_data=False,
             ),
             removal_policy=(

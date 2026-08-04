@@ -69,6 +69,35 @@ SAMPLE_EVENT = {
 }
 
 
+def _stored_pointers(prepared: dict, results) -> list[dict]:
+    """Store per-criterion results in S3 and return the pointers summarize expects.
+
+    The Map state hands summarize pointers, not reasoning text, so tests that
+    drive summarize directly have to stage the results the same way
+    evaluate_criterion would.
+    """
+    from src.jobs import put_result
+
+    pointers = []
+    for name, assessability, score, reasoning in results:
+        payload = {
+            "name": name,
+            "assessability": assessability,
+            "score": score,
+            "reasoning": reasoning,
+        }
+        uri = put_result(JOBS_BUCKET, prepared["content_hash"], name, payload)
+        pointers.append(
+            {
+                "name": name,
+                "assessability": assessability,
+                "score": score,
+                "result_uri": uri,
+            }
+        )
+    return pointers
+
+
 # ---------------------------------------------------------------------------
 # src/jobs.py
 # ---------------------------------------------------------------------------
@@ -218,7 +247,13 @@ class TestEvaluateCriterion:
         assert result["name"] == "clarity"
         assert result["score"] == 4.5
         assert result["assessability"] == "assessed"
-        assert result["reasoning"] == "正確である"
+
+        # The reasoning text is offloaded so that state size stays independent
+        # of the criteria count; only a pointer crosses the state boundary.
+        assert "reasoning" not in result
+        from src.jobs import get_result
+
+        assert get_result(result["result_uri"])["reasoning"] == "正確である"
 
     def test_out_of_range_index_rejected(
         self, jobs_bucket, bedrock_env, lambda_ctx
@@ -281,16 +316,15 @@ class TestSummarize:
         from src.handlers.summarize import handler as summarize
 
         prepared = prepare(dict(SAMPLE_EVENT), lambda_ctx)
-        shuffled = [
-            {"name": "completeness", "assessability": "assessed", "score": 3.0,
-             "reasoning": "d"},
-            {"name": "accuracy", "assessability": "assessed", "score": 5.0,
-             "reasoning": "a"},
-            {"name": "helpfulness", "assessability": "assessed", "score": 4.0,
-             "reasoning": "c"},
-            {"name": "clarity", "assessability": "assessed", "score": 2.0,
-             "reasoning": "b"},
-        ]
+        shuffled = _stored_pointers(
+            prepared,
+            [
+                ("completeness", "assessed", 3.0, "d"),
+                ("accuracy", "assessed", 5.0, "a"),
+                ("helpfulness", "assessed", 4.0, "c"),
+                ("clarity", "assessed", 2.0, "b"),
+            ],
+        )
 
         provider = MagicMock()
         provider.complete.return_value = "総評テキスト"
@@ -315,12 +349,13 @@ class TestSummarize:
         from src.handlers.summarize import handler as summarize
 
         prepared = prepare(dict(SAMPLE_EVENT), lambda_ctx)
-        results = [
-            {"name": "accuracy", "assessability": "assessed", "score": 4.0,
-             "reasoning": "ok"},
-            {"name": "clarity", "assessability": "not_assessable", "score": None,
-             "reasoning": "missing role"},
-        ]
+        results = _stored_pointers(
+            prepared,
+            [
+                ("accuracy", "assessed", 4.0, "ok"),
+                ("clarity", "not_assessable", None, "missing role"),
+            ],
+        )
 
         provider = MagicMock()
         provider.complete.return_value = "総評"
@@ -430,3 +465,325 @@ class TestResponseContract:
         assert len(result["criterion_assessability"]) == 4
         assert len(result["criterion_reasoning"]) == 4
         assert set(result["criterion_scores"]) <= set(result["criterion_assessability"])
+
+
+# ---------------------------------------------------------------------------
+# Content hashing and result offloading
+# ---------------------------------------------------------------------------
+
+
+class TestContentHash:
+    """The hash decides what deduplicates, so what it covers is load-bearing."""
+
+    @staticmethod
+    def _payload(**overrides):
+        base = {
+            "prompt": "Q?",
+            "response": "A.",
+            "prompt_descriptor": None,
+            "response_descriptor": None,
+            "system_prompt": None,
+            "contexts": None,
+            "provider": "bedrock",
+            "judge_model": "amazon.nova-lite-v1:0",
+            "criteria": {"name": "c", "criteria": [{"name": "a", "description": "d"}]},
+        }
+        base.update(overrides)
+        return base
+
+    def test_identical_inputs_hash_identically(self) -> None:
+        from src.jobs import compute_content_hash
+
+        assert compute_content_hash(self._payload()) == compute_content_hash(
+            self._payload()
+        )
+
+    def test_key_order_does_not_matter(self) -> None:
+        """Payloads are built in different orders in different code paths."""
+        from src.jobs import compute_content_hash
+
+        forward = self._payload()
+        reversed_order = dict(reversed(list(forward.items())))
+        assert compute_content_hash(forward) == compute_content_hash(reversed_order)
+
+    def test_job_identity_is_excluded(self) -> None:
+        """A per-execution UUID must not enter the hash, or nothing dedupes."""
+        from src.jobs import compute_content_hash
+
+        assert compute_content_hash(
+            self._payload(job_id="uuid-1")
+        ) == compute_content_hash(self._payload(job_id="uuid-2"))
+
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("prompt", "different"),
+            ("response", "different"),
+            ("system_prompt", "be strict"),
+            ("contexts", ["extra"]),
+            ("judge_model", "amazon.nova-pro-v1:0"),
+            ("provider", "anthropic"),
+            ("prompt_descriptor", "note"),
+        ],
+    )
+    def test_outcome_bearing_fields_change_the_hash(
+        self, field: str, value: object
+    ) -> None:
+        from src.jobs import compute_content_hash
+
+        assert compute_content_hash(self._payload()) != compute_content_hash(
+            self._payload(**{field: value})
+        )
+
+    def test_changing_criteria_changes_the_hash(self) -> None:
+        from src.jobs import compute_content_hash
+
+        other = {"name": "c", "criteria": [{"name": "b", "description": "d"}]}
+        assert compute_content_hash(self._payload()) != compute_content_hash(
+            self._payload(criteria=other)
+        )
+
+    def test_prepare_stages_the_hash(
+        self, jobs_bucket, bedrock_env, lambda_ctx
+    ) -> None:
+        from src.handlers.prepare import handler
+        from src.jobs import get_job
+
+        prepared = handler(dict(SAMPLE_EVENT), lambda_ctx)
+        assert prepared["content_hash"]
+        assert get_job(prepared["job_uri"])["content_hash"] == prepared["content_hash"]
+
+    def test_same_submission_hashes_the_same_across_executions(
+        self, jobs_bucket, bedrock_env, lambda_ctx
+    ) -> None:
+        """Two executions of identical input must agree, or the idempotency
+        layer would never see a repeat."""
+        from src.handlers.prepare import handler
+
+        first = handler(dict(SAMPLE_EVENT), lambda_ctx)
+        second = handler(dict(SAMPLE_EVENT), lambda_ctx)
+
+        assert first["job_uri"] != second["job_uri"]
+        assert first["content_hash"] == second["content_hash"]
+
+
+class TestResultOffloading:
+    def test_result_keys_are_deterministic(self, jobs_bucket) -> None:
+        """A retried criterion overwrites its object rather than orphaning one."""
+        from src.jobs import put_result
+
+        first = put_result(JOBS_BUCKET, "hash1", "accuracy", {"n": 1})
+        second = put_result(JOBS_BUCKET, "hash1", "accuracy", {"n": 2})
+
+        assert first == second
+
+    def test_different_criteria_get_different_keys(self, jobs_bucket) -> None:
+        from src.jobs import put_result
+
+        assert put_result(JOBS_BUCKET, "h", "accuracy", {}) != put_result(
+            JOBS_BUCKET, "h", "clarity", {}
+        )
+
+    def test_round_trip_preserves_japanese_reasoning(self, jobs_bucket) -> None:
+        from src.jobs import get_result, put_result
+
+        payload = {"name": "a", "reasoning": "事実の正確性は高い。", "score": 4.0}
+        assert get_result(put_result(JOBS_BUCKET, "h", "a", payload)) == payload
+
+    def test_batch_fetch_preserves_order(self, jobs_bucket) -> None:
+        """summarize relies on this to line results up with criteria."""
+        from src.jobs import get_results, put_result
+
+        uris = [put_result(JOBS_BUCKET, "h", f"c{i}", {"i": i}) for i in range(12)]
+        assert [r["i"] for r in get_results(uris)] == list(range(12))
+
+    def test_batch_fetch_handles_empty_and_single(self, jobs_bucket) -> None:
+        from src.jobs import get_results, put_result
+
+        assert get_results([]) == []
+        uri = put_result(JOBS_BUCKET, "h", "only", {"i": 0})
+        assert get_results([uri]) == [{"i": 0}]
+
+    def test_missing_result_is_not_silently_skipped(self, jobs_bucket) -> None:
+        """Dropping a result would understate the rubric while looking complete."""
+        from src.errors import LlmJudgeError
+        from src.jobs import get_results, put_result
+
+        good = put_result(JOBS_BUCKET, "h", "a", {"i": 0})
+        with pytest.raises(LlmJudgeError):
+            get_results([good, f"s3://{JOBS_BUCKET}/results/h/absent.json"])
+
+    def test_state_payload_stays_small_regardless_of_reasoning_length(
+        self, jobs_bucket, bedrock_env, lambda_ctx
+    ) -> None:
+        """The 256 KB state limit is why reasoning is offloaded at all."""
+        from src.handlers.evaluate_criterion import handler
+        from src.handlers.prepare import handler as prepare
+
+        prepared = prepare(dict(SAMPLE_EVENT), lambda_ctx)
+        provider = MagicMock()
+        provider.complete.return_value = _criterion_json(4.0, "根" * 50_000)
+
+        with patch(
+            "src.handlers.evaluate_criterion.get_provider", return_value=provider
+        ):
+            result = handler(prepared["items"][0], lambda_ctx)
+
+        assert len(json.dumps(result)) < 1_000
+
+
+# ---------------------------------------------------------------------------
+# Idempotency
+# ---------------------------------------------------------------------------
+
+
+IDEMPOTENCY_TABLE = "llm-judge-idempotency-test"
+
+
+@pytest.fixture
+def idempotency_table(monkeypatch: pytest.MonkeyPatch):
+    """A DynamoDB table standing in for the idempotency store."""
+    with mock_aws():
+        dynamodb = boto3.client("dynamodb", region_name="us-east-1")
+        dynamodb.create_table(
+            TableName=IDEMPOTENCY_TABLE,
+            KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
+            AttributeDefinitions=[{"AttributeName": "id", "AttributeType": "S"}],
+            BillingMode="PAY_PER_REQUEST",
+        )
+        monkeypatch.setenv("IDEMPOTENCY_TABLE", IDEMPOTENCY_TABLE)
+        monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+        yield dynamodb
+
+
+class TestIdempotencyWiring:
+    def test_disabled_without_a_table(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Local runs and tests must not require DynamoDB."""
+        monkeypatch.delenv("IDEMPOTENCY_TABLE", raising=False)
+
+        from src.idempotency import idempotent_criterion_call, is_enabled
+
+        assert is_enabled() is False
+
+        def fn(*, payload):
+            return payload["n"]
+
+        # Pass-through: same object back, no wrapper.
+        assert idempotent_criterion_call(fn) is fn
+
+    def test_enabled_when_a_table_is_configured(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("IDEMPOTENCY_TABLE", "some-table")
+
+        from src.idempotency import is_enabled
+
+        assert is_enabled() is True
+
+    def test_key_includes_content_criterion_and_model(self) -> None:
+        """All three must participate, or different work would collide."""
+        from src.idempotency import build_key
+
+        base = build_key("hash", "accuracy", "model-a")
+        assert base != build_key("other", "accuracy", "model-a")
+        assert base != build_key("hash", "clarity", "model-a")
+        assert base != build_key("hash", "accuracy", "model-b")
+        assert base == build_key("hash", "accuracy", "model-a")
+
+    def test_blank_table_name_is_treated_as_unset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("IDEMPOTENCY_TABLE", "   ")
+
+        from src.idempotency import is_enabled
+
+        assert is_enabled() is False
+
+
+class TestIdempotentCriterionEvaluation:
+    """The judge call is the expensive part; a repeat must not pay for it twice."""
+
+    @staticmethod
+    def _reload_handler():
+        """Re-import so the decorator re-reads IDEMPOTENCY_TABLE."""
+        import importlib
+
+        import src.handlers.evaluate_criterion as module
+
+        return importlib.reload(module)
+
+    def test_repeated_criterion_does_not_call_the_model_again(
+        self, jobs_bucket, idempotency_table, bedrock_env, lambda_ctx
+    ) -> None:
+        from src.handlers.prepare import handler as prepare
+
+        module = self._reload_handler()
+        prepared = prepare(dict(SAMPLE_EVENT), lambda_ctx)
+
+        provider = MagicMock()
+        provider.complete.return_value = _criterion_json(4.0, "根拠")
+
+        with patch.object(module, "get_provider", return_value=provider):
+            first = module.handler(prepared["items"][0], lambda_ctx)
+            second = module.handler(prepared["items"][0], lambda_ctx)
+
+        assert provider.complete.call_count == 1, (
+            "the second evaluation of the same criterion called the model again"
+        )
+        assert first == second
+
+    def test_identical_resubmission_reuses_the_stored_result(
+        self, jobs_bucket, idempotency_table, bedrock_env, lambda_ctx
+    ) -> None:
+        """A different execution of the same content must still deduplicate."""
+        from src.handlers.prepare import handler as prepare
+
+        module = self._reload_handler()
+        first_job = prepare(dict(SAMPLE_EVENT), lambda_ctx)
+        second_job = prepare(dict(SAMPLE_EVENT), lambda_ctx)
+        assert first_job["job_uri"] != second_job["job_uri"]
+
+        provider = MagicMock()
+        provider.complete.return_value = _criterion_json(4.0, "根拠")
+
+        with patch.object(module, "get_provider", return_value=provider):
+            module.handler(first_job["items"][0], lambda_ctx)
+            module.handler(second_job["items"][0], lambda_ctx)
+
+        assert provider.complete.call_count == 1
+
+    def test_different_criteria_are_evaluated_separately(
+        self, jobs_bucket, idempotency_table, bedrock_env, lambda_ctx
+    ) -> None:
+        from src.handlers.prepare import handler as prepare
+
+        module = self._reload_handler()
+        prepared = prepare(dict(SAMPLE_EVENT), lambda_ctx)
+
+        provider = MagicMock()
+        provider.complete.return_value = _criterion_json(4.0, "根拠")
+
+        with patch.object(module, "get_provider", return_value=provider):
+            for item in prepared["items"]:
+                module.handler(item, lambda_ctx)
+
+        assert provider.complete.call_count == len(prepared["items"])
+
+    def test_without_a_table_every_call_reaches_the_model(
+        self, jobs_bucket, bedrock_env, lambda_ctx, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Degrading to 'always evaluate' is correct; returning stale is not."""
+        monkeypatch.delenv("IDEMPOTENCY_TABLE", raising=False)
+        from src.handlers.prepare import handler as prepare
+
+        module = self._reload_handler()
+        prepared = prepare(dict(SAMPLE_EVENT), lambda_ctx)
+
+        provider = MagicMock()
+        provider.complete.return_value = _criterion_json(4.0, "根拠")
+
+        with patch.object(module, "get_provider", return_value=provider):
+            module.handler(prepared["items"][0], lambda_ctx)
+            module.handler(prepared["items"][0], lambda_ctx)
+
+        assert provider.complete.call_count == 2

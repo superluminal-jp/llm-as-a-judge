@@ -1,15 +1,21 @@
 """Summarize step: synthesise the 総評 and assemble the final response.
 
-Last state of the workflow. Receives every Map branch's result, restores the
-original criterion ordering, asks the judge for an executive summary, and
-returns the response dict.
+Last state of the workflow. Receives one pointer per criterion, fetches the
+results from S3, restores the criteria file's ordering, asks the judge for an
+executive summary, and assembles the response.
 
-The output is byte-compatible with :func:`src.handler.lambda_handler` because it
-is produced by the same :func:`src.evaluator.aggregate_results`.
+The Map state hands over pointers rather than reasoning text so that the state
+size stays independent of the criteria count — see :mod:`src.jobs`. Fetching
+them back is concurrent, since a few hundred sequential round trips would
+dominate this step's runtime.
+
+The assembled dict is what ``contracts/lambda-response.json`` describes; it is
+produced by :func:`src.evaluator.aggregate_results`.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from aws_lambda_powertools import Logger
@@ -17,12 +23,13 @@ from aws_lambda_powertools.utilities.typing import LambdaContext
 
 from src.config import get_config
 from src.criteria import load_from_dict
+from src.errors import ValidationError
 from src.evaluator import (
     ASSESSABILITY_NOT_ASSESSABLE,
     aggregate_results,
     build_summary_prompt,
 )
-from src.jobs import get_job
+from src.jobs import get_job, get_results, put_final_result
 from src.observability import MetricName, add_count, metrics, tracer
 from src.providers import get_provider
 
@@ -36,7 +43,8 @@ def handler(event: dict, context: LambdaContext) -> dict[str, Any]:
 
     Args:
         event:   ``{"job_uri": str, "results": [...]}`` where each result is a
-                 dict emitted by :mod:`src.handlers.evaluate_criterion`.
+                 pointer dict emitted by :mod:`src.handlers.evaluate_criterion`
+                 carrying ``result_uri``.
         context: Lambda context provided by the runtime.
 
     Returns:
@@ -46,8 +54,6 @@ def handler(event: dict, context: LambdaContext) -> dict[str, Any]:
         ValidationError: If the event is missing the job URI or results.
         ProviderError:   If the summary LLM call fails.
     """
-    from src.errors import ValidationError
-
     request_id = getattr(context, "aws_request_id", None)
     if request_id:
         logger.set_correlation_id(request_id)
@@ -67,13 +73,21 @@ def handler(event: dict, context: LambdaContext) -> dict[str, Any]:
     provider_name: str = job["provider"]
     judge_model: str = job["judge_model"]
 
+    # The Map output carries pointers; the reasoning text is in S3.
+    missing = [r for r in raw_results if not r.get("result_uri")]
+    if missing:
+        raise ValidationError(
+            f"{len(missing)} criterion result(s) are missing 'result_uri'."
+        )
+    fetched = get_results([r["result_uri"] for r in raw_results])
+
     # Map branches complete in arbitrary order. Restore the criteria file's
     # ordering so that the summary prompt — and the response — read in the order
     # the rubric author intended.
     order = {c.name: i for i, c in enumerate(criteria.criteria)}
     results: list[tuple[str, str, float | None, str]] = [
         (r["name"], r["assessability"], r.get("score"), r["reasoning"])
-        for r in raw_results
+        for r in fetched
     ]
     results.sort(key=lambda r: order.get(r[0], len(order)))
 
@@ -118,9 +132,20 @@ def handler(event: dict, context: LambdaContext) -> dict[str, Any]:
         },
     )
 
-    return aggregate_results(
+    response = aggregate_results(
         results,
         reasoning=reasoning,
         judge_model=judge_model,
         provider=provider_name,
     )
+
+    # Persisted on both paths: the synchronous workflow returns this to its
+    # caller, but an asynchronous execution has nowhere to return it to, so S3
+    # is where an async caller collects it. The URI rides along in the execution
+    # output without becoming part of the response contract.
+    result_uri = put_final_result(
+        os.environ.get("JOBS_BUCKET", ""), job["content_hash"], response
+    )
+    logger.info("Evaluation result stored", extra={"result_uri": result_uri})
+
+    return response

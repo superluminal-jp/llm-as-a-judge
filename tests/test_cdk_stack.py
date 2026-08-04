@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 
 import aws_cdk as cdk
@@ -80,6 +81,14 @@ def _role_statements(template: Template, role_prefix: str) -> list[dict]:
         if refs & role_ids:
             statements.extend(resource["Properties"]["PolicyDocument"]["Statement"])
     return statements
+
+
+def _timeout_seconds(props: dict) -> int:
+    """Return a state machine's TimeoutSeconds from its definition."""
+    definition = str(props["DefinitionString"]).replace(" ", "")
+    match = re.search(r'"TimeoutSeconds":(\d+)', definition)
+    assert match, "no TimeoutSeconds in the state machine definition"
+    return int(match.group(1))
 
 
 def _actions(statements: list[dict]) -> set[str]:
@@ -187,16 +196,17 @@ class TestS3Iam:
         legitimately holds broader access to the same bucket, so a whole-template
         string search would pass vacuously.
         """
-        for statement in _role_statements(template, "EvaluateCriterionFunctionServiceRole"):
-            actions = statement["Action"]
-            actions = [actions] if isinstance(actions, str) else actions
-            for action in actions:
-                assert not str(action).startswith("s3:List"), (
-                    f"judge role must not hold bucket-level S3 access: {action}"
-                )
-                assert not str(action).startswith("s3:Put"), (
-                    f"judge role must not hold S3 write access: {action}"
-                )
+        actions = _actions(
+            _role_statements(template, "EvaluateCriterionFunctionServiceRole")
+        )
+        for action in actions:
+            assert not action.startswith(("s3:List", "s3:GetBucket")), (
+                f"criterion worker must not hold bucket-level S3 access: {action}"
+            )
+        # It writes its own result object, but must not be able to delete.
+        assert not [a for a in actions if a.startswith("s3:Delete")], (
+            f"criterion worker must not hold S3 delete access: {sorted(actions)}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -305,8 +315,9 @@ class TestObservability:
         )
 
     def test_alarms_exist(self, template: Template) -> None:
-        # errors, throttles, duration p99, DLQ depth, workflow failures
-        template.resource_count_is("AWS::CloudWatch::Alarm", 5)
+        # errors, throttles, duration p99, DLQ depth, plus one failure alarm
+        # per workflow (sync and async)
+        template.resource_count_is("AWS::CloudWatch::Alarm", 6)
 
     def test_alarms_notify_sns(self, template: Template) -> None:
         alarms = template.find_resources("AWS::CloudWatch::Alarm")
@@ -483,42 +494,87 @@ class TestEvaluationWorkflow:
     """The fan-out moved from an in-Lambda thread pool to a Map state."""
 
     @staticmethod
-    def _definition(template: Template) -> dict:
+    def _definitions(template: Template) -> list[dict]:
         machines = template.find_resources("AWS::StepFunctions::StateMachine")
         assert machines, "no state machine synthesised"
-        return list(machines.values())[0]["Properties"]
+        return [m["Properties"] for m in machines.values()]
 
-    def test_express_workflow_for_synchronous_invocation(
+    @staticmethod
+    def _definition(template: Template, machine_type: str) -> dict:
+        machines = template.find_resources("AWS::StepFunctions::StateMachine")
+        matching = [
+            m["Properties"]
+            for m in machines.values()
+            if m["Properties"].get("StateMachineType") == machine_type
+        ]
+        assert matching, f"no {machine_type} state machine synthesised"
+        return matching[0]
+
+    def test_both_workflows_are_deployed(self, template: Template) -> None:
+        """Express answers callers directly; Standard carries volume."""
+        types = {p["StateMachineType"] for p in self._definitions(template)}
+        assert types == {"EXPRESS", "STANDARD"}
+
+    def test_sync_workflow_fits_inside_the_express_ceiling(
         self, template: Template
     ) -> None:
-        """Express supports StartSyncExecution, preserving the request/response
-        contract the direct-invoke Lambda already offers."""
-        assert self._definition(template)["StateMachineType"] == "EXPRESS"
+        """Express caps an execution at 5 minutes; the timeout must be under it."""
+        props = self._definition(template, "EXPRESS")
+        assert props["DefinitionString"]
+        assert 0 < _timeout_seconds(props) < 300
+
+    def test_async_workflow_uses_a_distributed_map(
+        self, template: Template
+    ) -> None:
+        """Inline Map caps at 40 iterations; the async path must not inherit that."""
+        definition = str(self._definition(template, "STANDARD")["DefinitionString"])
+        assert "DISTRIBUTED" in definition, (
+            "async workflow does not use a Distributed Map, so it cannot exceed "
+            "the inline Map concurrency limit"
+        )
+
+    def test_async_workflow_tolerates_no_criterion_failure(
+        self, template: Template
+    ) -> None:
+        """A criterion that could not be scored is not 'not assessable'.
+
+        ASL defaults both tolerated-failure settings to zero, so the CDK omits
+        them; this asserts nothing has raised them, which is the property that
+        matters.
+        """
+        definition = str(
+            self._definition(template, "STANDARD")["DefinitionString"]
+        ).replace(" ", "")
+        assert not re.search(r'"ToleratedFailureCount":[1-9]', definition)
+        assert not re.search(r'"ToleratedFailurePercentage":[1-9]', definition)
 
     def test_tracing_enabled(self, template: Template) -> None:
-        props = self._definition(template)
-        assert props["TracingConfiguration"]["Enabled"] is True
+        for props in self._definitions(template):
+            assert props["TracingConfiguration"]["Enabled"] is True
 
     def test_execution_data_not_logged(self, template: Template) -> None:
-        """State carries judge reasoning quoting the submitted material."""
-        props = self._definition(template)
-        logging = props["LoggingConfiguration"]
-        assert logging["IncludeExecutionData"] is False
-        assert logging["Level"] == "ALL"
+        """State carries pointers and the response quoting submitted material."""
+        for props in self._definitions(template):
+            logging = props["LoggingConfiguration"]
+            assert logging["IncludeExecutionData"] is False
+            assert logging["Level"] == "ALL"
 
     def test_map_concurrency_is_capped(self, template: Template) -> None:
-        definition = str(self._definition(template)["DefinitionString"])
-        assert '\\"MaxConcurrency\\":5' in definition.replace(" ", "") or (
-            '"MaxConcurrency":5' in definition.replace(" ", "")
-        ), "Map state does not cap concurrency"
+        """Concurrency is declared in the workflow, not left to the caller."""
+        for props in self._definitions(template):
+            definition = str(props["DefinitionString"]).replace(" ", "")
+            assert "MaxConcurrency" in definition, (
+                f"{props.get('StateMachineName')} does not cap Map concurrency"
+            )
 
     def test_retries_use_backoff_and_full_jitter(self, template: Template) -> None:
         """Retrying in the state machine keeps backoff off billed Lambda time."""
-        definition = str(self._definition(template)["DefinitionString"])
-        assert "ThrottlingException" in definition
-        assert "ModelTimeoutException" in definition
-        assert "BackoffRate" in definition
-        assert "FULL" in definition
+        for props in self._definitions(template):
+            definition = str(props["DefinitionString"])
+            assert "ThrottlingException" in definition
+            assert "ModelTimeoutException" in definition
+            assert "BackoffRate" in definition
+            assert "FULL" in definition
 
     def test_exactly_three_workflow_functions(self, template: Template) -> None:
         """One Lambda per step. The single-Lambda path no longer exists."""
@@ -548,14 +604,24 @@ class TestEvaluationWorkflow:
             f"prepare step should not reach Bedrock, got {sorted(actions)}"
         )
 
-    def test_criterion_worker_cannot_write_to_jobs_bucket(
+    def test_criterion_worker_reaches_bedrock_and_the_idempotency_table(
         self, template: Template
     ) -> None:
-        statements = _role_statements(template, "EvaluateCriterionFunctionServiceRole")
-        actions = _actions(statements)
+        """It is the only step that calls a model, so the only one that dedupes."""
+        actions = _actions(
+            _role_statements(template, "EvaluateCriterionFunctionServiceRole")
+        )
         assert any(a.startswith("bedrock:") for a in actions), "worker needs Bedrock"
-        assert not any(a.startswith("s3:Put") for a in actions), (
-            f"criterion worker should be read-only on S3, got {sorted(actions)}"
+        assert any(a.startswith("dynamodb:") for a in actions), (
+            "worker cannot reach the idempotency table, so repeats would pay "
+            f"for the model again. Granted: {sorted(actions)}"
+        )
+
+    def test_prepare_step_does_not_deduplicate(self, template: Template) -> None:
+        """Only the expensive step needs the table."""
+        actions = _actions(_role_statements(template, "PrepareFunctionServiceRole"))
+        assert not [a for a in actions if a.startswith("dynamodb:")], (
+            f"prepare step should not touch the idempotency table: {sorted(actions)}"
         )
 
     def test_criterion_worker_cannot_read_criteria_bucket(

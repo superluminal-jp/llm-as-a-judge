@@ -21,7 +21,7 @@ from aws_lambda_powertools.utilities.typing import LambdaContext
 
 from src.config import get_config, validate_for_provider
 from src.criteria import DefaultCriteria, load_from_s3
-from src.jobs import put_job
+from src.jobs import compute_content_hash, put_job
 from src.observability import metrics, tracer
 from src.validation import default_model, normalize_context, validate_event
 
@@ -39,8 +39,9 @@ def handler(event: dict, context: LambdaContext) -> dict[str, Any]:
         context: Lambda context provided by the runtime.
 
     Returns:
-        Dict with ``job_uri``, ``provider``, ``judge_model``, ``criteria_count``
-        and ``items`` — the last being the array the Map state iterates.
+        Dict with ``job_uri``, ``content_hash``, ``provider``, ``judge_model``,
+        ``criteria_count`` and ``items`` — the last being the array the Map
+        state iterates.
 
     Raises:
         ValidationError:    Required fields missing or malformed.
@@ -89,12 +90,18 @@ def handler(event: dict, context: LambdaContext) -> dict[str, Any]:
         "criteria": dataclasses.asdict(criteria),
     }
 
+    # Hashed before staging so that the hash covers only what determines the
+    # outcome — the job's own UUID must not enter it, or two identical
+    # submissions would never deduplicate.
+    job_payload["content_hash"] = compute_content_hash(job_payload)
+
     job_uri = put_job(os.environ.get("JOBS_BUCKET", ""), job_payload)
 
     logger.info(
         "Evaluation prepared",
         extra={
             "job_uri": job_uri,
+            "content_hash": job_payload["content_hash"],
             "provider": provider_name,
             "model": judge_model,
             "criteria_count": len(criteria.criteria),
@@ -103,6 +110,7 @@ def handler(event: dict, context: LambdaContext) -> dict[str, Any]:
 
     return {
         "job_uri": job_uri,
+        "content_hash": job_payload["content_hash"],
         "provider": provider_name,
         "judge_model": judge_model,
         "criteria_count": len(criteria.criteria),
