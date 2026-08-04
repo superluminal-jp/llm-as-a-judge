@@ -30,6 +30,11 @@ logger = Logger(service="llm-judge")
 # Threshold in milliseconds above which LLM call duration is logged at INFO.
 _LLM_DURATION_LOG_THRESHOLD_MS = 100
 
+# Fallback fan-out limit when the caller does not pass ``max_parallel``. The
+# deployed value comes from the MAX_PARALLEL_CRITERIA environment variable via
+# ``Config.max_parallel_criteria``.
+DEFAULT_MAX_PARALLEL_CRITERIA = 5
+
 ASSESSABILITY_ASSESSED = "assessed"
 ASSESSABILITY_NOT_ASSESSABLE = "not_assessable"
 
@@ -442,6 +447,7 @@ def evaluate(
     has_response: bool | None = None,
     prompt_descriptor: str | None = None,
     response_descriptor: str | None = None,
+    max_parallel: int = DEFAULT_MAX_PARALLEL_CRITERIA,
 ) -> dict:
     """Run multi-criteria evaluation: one LLM call per criterion in parallel.
 
@@ -452,6 +458,8 @@ def evaluate(
         has_response: If None, inferred from stripped ``response`` being non-empty.
         prompt_descriptor: Optional operator label for the prompt role.
         response_descriptor: Optional operator label for the response role.
+        max_parallel: Upper bound on concurrent judge LLM calls. The effective
+            worker count is ``min(len(criteria), max_parallel)``.
 
     Returns:
         Dict matching ``contracts/lambda-response.json`` including
@@ -466,7 +474,13 @@ def evaluate(
     criterion_list = criteria.criteria
     order = {c.name: i for i, c in enumerate(criterion_list)}
 
-    with ThreadPoolExecutor(max_workers=len(criterion_list)) as executor:
+    # Cap the fan-out instead of letting the criteria file dictate it. A
+    # 10-criterion file previously opened 10 concurrent judge calls per
+    # invocation, which multiplied by Lambda concurrency to overrun Bedrock
+    # account quota and exhausted the botocore connection pool.
+    workers = max(1, min(len(criterion_list), max_parallel))
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {
             executor.submit(
                 _evaluate_one_criterion,

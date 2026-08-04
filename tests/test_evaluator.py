@@ -10,6 +10,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -647,3 +648,114 @@ class TestEvaluateWithOptionalFields:
         assert result["criterion_assessability"]["accuracy"] == ASSESSABILITY_ASSESSED
         assert result["criterion_assessability"]["clarity"] == ASSESSABILITY_ASSESSED
         assert result["reasoning"] == "システムプロンプトを踏まえた総評。"
+
+
+# ---------------------------------------------------------------------------
+# Bounded parallelism
+# ---------------------------------------------------------------------------
+
+
+class TestEvaluateParallelismIsBounded:
+    """Fan-out must be capped rather than dictated by the criteria count.
+
+    A criteria file with N criteria previously opened N concurrent judge calls
+    per invocation, which multiplied by Lambda concurrency to overrun Bedrock
+    account quota and exhaust the botocore connection pool.
+    """
+
+    @staticmethod
+    def _criteria(count: int) -> EvaluationCriteria:
+        return EvaluationCriteria(
+            name="Many",
+            criteria=[
+                CriterionDefinition(name=f"c{i}", description=f"Criterion {i}")
+                for i in range(count)
+            ],
+        )
+
+    @staticmethod
+    def _provider_recording_concurrency(peak: list[int], live: list[int]):
+        import threading
+
+        lock = threading.Lock()
+
+        def complete(messages, model, timeout):  # noqa: ARG001
+            with lock:
+                live[0] += 1
+                peak[0] = max(peak[0], live[0])
+            time.sleep(0.02)
+            with lock:
+                live[0] -= 1
+            return _judge_criterion_json(4.0, "ok")
+
+        provider = MagicMock()
+        provider.complete.side_effect = complete
+        return provider
+
+    def test_worker_count_respects_max_parallel(self):
+        peak, live = [0], [0]
+        provider = self._provider_recording_concurrency(peak, live)
+
+        evaluate(
+            prompt="Q?",
+            response="A.",
+            criteria=self._criteria(10),
+            provider=provider,
+            model="m",
+            timeout=30,
+            max_parallel=3,
+        )
+
+        assert peak[0] <= 3, f"observed {peak[0]} concurrent judge calls, expected <= 3"
+
+    def test_all_criteria_still_evaluated_when_capped(self):
+        provider = MagicMock()
+        provider.complete.side_effect = [_judge_criterion_json(4.0, "ok")] * 10 + [
+            "総評"
+        ]
+
+        result = evaluate(
+            prompt="Q?",
+            response="A.",
+            criteria=self._criteria(10),
+            provider=provider,
+            model="m",
+            timeout=30,
+            max_parallel=2,
+        )
+
+        assert len(result["criterion_scores"]) == 10
+        assert provider.complete.call_count == 11  # 10 criteria + 1 summary
+
+    def test_criterion_order_preserved_under_cap(self):
+        provider = MagicMock()
+        provider.complete.side_effect = [_judge_criterion_json(4.0, "ok")] * 6 + ["総評"]
+
+        result = evaluate(
+            prompt="Q?",
+            response="A.",
+            criteria=self._criteria(6),
+            provider=provider,
+            model="m",
+            timeout=30,
+            max_parallel=2,
+        )
+
+        assert list(result["criterion_reasoning"].keys()) == [f"c{i}" for i in range(6)]
+
+    def test_max_parallel_below_one_is_clamped(self):
+        """A zero worker count would make ThreadPoolExecutor raise."""
+        provider = MagicMock()
+        provider.complete.side_effect = [_judge_criterion_json(4.0, "ok")] * 2 + ["総評"]
+
+        result = evaluate(
+            prompt="Q?",
+            response="A.",
+            criteria=self._criteria(2),
+            provider=provider,
+            model="m",
+            timeout=30,
+            max_parallel=0,
+        )
+
+        assert len(result["criterion_scores"]) == 2

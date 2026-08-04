@@ -275,6 +275,7 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
             has_response=bool(response_text),
             prompt_descriptor=prompt_descriptor,
             response_descriptor=response_descriptor,
+            max_parallel=config.max_parallel_criteria,
         )
 
         duration_sec = time.perf_counter() - start_time
