@@ -12,6 +12,7 @@ but is accepted when supplied programmatically to :class:`~aws_cdk.App`.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -309,6 +310,59 @@ class TestObservability:
 
     def test_dashboard_created(self, template: Template) -> None:
         template.resource_count_is("AWS::CloudWatch::Dashboard", 1)
+
+
+class TestCdkNagCompliance:
+    """The AWS Solutions rule pack must report no unsuppressed findings.
+
+    Suppressions live in cdk/stack.py and each carries a written reason; this
+    test fails when a change introduces a finding that nobody has justified.
+    """
+
+    def test_no_unsuppressed_findings(self, tmp_path) -> None:
+        import glob
+
+        from cdk_nag import AwsSolutionsChecks, NagReportFormat
+
+        app = cdk.App(
+            outdir=str(tmp_path), context={"aws:cdk:bundling-stacks": []}
+        )
+        LlmJudgeStack(
+            app,
+            "LlmJudgeStack-dev",
+            env=cdk.Environment(account="111122223333", region="ap-northeast-1"),
+            environment_name="dev",
+            default_provider="bedrock",
+            bedrock_model="jp.anthropic.claude-sonnet-4-6",
+            bedrock_allowed_models=list(DEFAULT_MODELS),
+            bedrock_inference_profile_regions=list(DEFAULT_PROFILE_REGIONS),
+            criteria_bucket_arn="",
+        )
+        cdk.Aspects.of(app).add(
+            AwsSolutionsChecks(
+                verbose=True,
+                reports=True,
+                report_formats=[NagReportFormat.JSON],
+            )
+        )
+        app.synth()
+
+        reports = glob.glob(str(tmp_path / "*NagReport.json"))
+        assert reports, "cdk-nag produced no report"
+
+        with open(reports[0], encoding="utf-8") as handle:
+            lines = json.load(handle)["lines"]
+
+        findings = [
+            f"{line['ruleId']} on {line['resourceId']}"
+            for line in lines
+            if line["compliance"] == "Non-Compliant"
+        ]
+        assert not findings, "unsuppressed cdk-nag findings:\n" + "\n".join(findings)
+
+        # Guard against the opposite failure: a blanket suppression that
+        # silences the whole rule pack.
+        assert any(line["compliance"] == "Compliant" for line in lines)
 
 
 class TestSupportingResources:

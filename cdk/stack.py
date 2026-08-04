@@ -46,6 +46,7 @@ import aws_cdk.aws_s3_deployment as s3_deployment
 import aws_cdk.aws_secretsmanager as secretsmanager
 import aws_cdk.aws_sns as sns
 import aws_cdk.aws_sqs as sqs
+from cdk_nag import NagSuppressions
 from constructs import Construct
 
 # Region prefixes that identify a Bedrock cross-region inference profile ID.
@@ -219,6 +220,24 @@ class LlmJudgeStack(cdk.Stack):
         stack_manages_bucket = not criteria_bucket_arn
 
         if stack_manages_bucket:
+            # Criteria define how submissions are scored, so who read or changed
+            # them is auditable information. Server access logs go to a separate
+            # bucket — a bucket cannot usefully log to itself.
+            access_logs_bucket = s3.Bucket(
+                self,
+                "CriteriaAccessLogsBucket",
+                encryption=s3.BucketEncryption.S3_MANAGED,
+                block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+                enforce_ssl=True,
+                versioned=False,
+                lifecycle_rules=[
+                    s3.LifecycleRule(
+                        id="ExpireAccessLogs",
+                        expiration=cdk.Duration.days(365 if is_production else 90),
+                    )
+                ],
+                removal_policy=cdk.RemovalPolicy.RETAIN,
+            )
             criteria_bucket = s3.Bucket(
                 self,
                 "CriteriaBucket",
@@ -226,6 +245,8 @@ class LlmJudgeStack(cdk.Stack):
                 block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
                 enforce_ssl=True,
                 versioned=True,
+                server_access_logs_bucket=access_logs_bucket,
+                server_access_logs_prefix="criteria-bucket/",
                 removal_policy=cdk.RemovalPolicy.RETAIN,
             )
             # Ship the criteria JSON files that live in this repository.
@@ -294,7 +315,7 @@ class LlmJudgeStack(cdk.Stack):
             self,
             "LlmJudgeFunction",
             function_name=resource_prefix,
-            runtime=lambda_.Runtime.PYTHON_3_12,
+            runtime=lambda_.Runtime.PYTHON_3_13,
             # ARM64/Graviton: cheaper per GB-second and equally suited to this
             # I/O-bound workload, which spends its time waiting on model APIs.
             architecture=lambda_.Architecture.ARM_64,
@@ -326,7 +347,7 @@ class LlmJudgeStack(cdk.Stack):
                     "**/*.pyc",
                 ],
                 bundling=cdk.BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
+                    image=lambda_.Runtime.PYTHON_3_13.bundling_image,
                     command=[
                         "bash",
                         "-c",
@@ -616,6 +637,129 @@ class LlmJudgeStack(cdk.Stack):
             value=alarm_topic.topic_arn,
             description="SNS topic that receives CloudWatch alarm notifications.",
         )
+
+        # -----------------------------------------------------------------
+        # cdk-nag suppressions
+        # -----------------------------------------------------------------
+        # Every suppression below is a deliberate, justified exception. Anything
+        # not listed here must be fixed rather than suppressed.
+
+        NagSuppressions.add_resource_suppressions(
+            function,
+            [
+                {
+                    "id": "AwsSolutions-IAM4",
+                    "reason": (
+                        "AWSLambdaBasicExecutionRole is the AWS-provided policy "
+                        "for CloudWatch Logs access and is the documented way to "
+                        "grant it. Every other permission on this role is "
+                        "customer-managed and resource-scoped."
+                    ),
+                },
+                {
+                    "id": "AwsSolutions-L1",
+                    "reason": (
+                        "Pinned to Python 3.13 rather than the newest runtime "
+                        "the CDK knows about. The runtime version is a "
+                        "deliberate deployment decision that must be validated "
+                        "against the bundled dependency set (anthropic, openai, "
+                        "boto3, aws-lambda-powertools) before it moves. Revisit "
+                        "this pin when those have been exercised on a newer "
+                        "runtime."
+                    ),
+                },
+                {
+                    "id": "AwsSolutions-IAM5",
+                    "reason": (
+                        "Two object-level wildcards remain and both are the "
+                        "narrowest form available: s3:GetObject on "
+                        "<criteria-bucket>/* (object keys are supplied at "
+                        "runtime by the caller) and the X-Ray PutTraceSegments / "
+                        "PutTelemetryRecords actions, which AWS defines as "
+                        "resource-independent. Bedrock and Secrets Manager "
+                        "access name specific ARNs."
+                    ),
+                },
+            ],
+            apply_to_children=True,
+        )
+
+        NagSuppressions.add_resource_suppressions(
+            api_keys_secret,
+            [
+                {
+                    "id": "AwsSolutions-SMG4",
+                    "reason": (
+                        "The secret holds third-party API keys (Anthropic, "
+                        "OpenAI). Secrets Manager cannot rotate credentials it "
+                        "does not issue, and neither vendor exposes a rotation "
+                        "API to drive from a rotation Lambda. Rotation is a "
+                        "manual operational procedure for this secret."
+                    ),
+                }
+            ],
+        )
+
+        if stack_manages_bucket:
+            NagSuppressions.add_resource_suppressions(
+                access_logs_bucket,
+                [
+                    {
+                        "id": "AwsSolutions-S1",
+                        "reason": (
+                            "This is itself the server access log destination "
+                            "for the criteria bucket. Pointing it at itself "
+                            "would create a logging loop."
+                        ),
+                    }
+                ],
+            )
+            # The BucketDeployment construct ships a CDK-managed custom resource
+            # whose runtime, role, and policies are not configurable here.
+            NagSuppressions.add_resource_suppressions_by_path(
+                self,
+                (
+                    f"/{construct_id}/Custom::CDKBucketDeployment"
+                    "8693BB64968944B69AAFB0CC9EB8756C"
+                ),
+                [
+                    {
+                        "id": "AwsSolutions-L1",
+                        "reason": (
+                            "Runtime is chosen by the aws-s3-deployment "
+                            "construct and tracks the CDK release, not this "
+                            "stack."
+                        ),
+                    }
+                ],
+                apply_to_children=True,
+            )
+            NagSuppressions.add_resource_suppressions_by_path(
+                self,
+                (
+                    f"/{construct_id}/Custom::CDKBucketDeployment"
+                    "8693BB64968944B69AAFB0CC9EB8756C/ServiceRole"
+                ),
+                [
+                    {
+                        "id": "AwsSolutions-IAM4",
+                        "reason": (
+                            "Role is generated by the aws-s3-deployment "
+                            "construct and is not configurable here."
+                        ),
+                    },
+                    {
+                        "id": "AwsSolutions-IAM5",
+                        "reason": (
+                            "The deployment custom resource needs object-level "
+                            "wildcard access to sync criteria files into the "
+                            "bucket it owns. Scope is limited to that bucket "
+                            "and the CDK asset bucket."
+                        ),
+                    },
+                ],
+                apply_to_children=True,
+            )
 
         # Retained as attributes so that Phase-4 constructs and tests can reach
         # them without re-deriving names.

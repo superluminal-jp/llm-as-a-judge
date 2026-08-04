@@ -30,6 +30,7 @@ import json
 import os
 
 import aws_cdk as cdk
+from cdk_nag import AwsSolutionsChecks
 
 from stack import LlmJudgeStack
 
@@ -122,5 +123,11 @@ stack = LlmJudgeStack(
 
 cdk.Tags.of(app).add("Service", "llm-judge")
 cdk.Tags.of(app).add("Environment", environment)
+
+# The AWS Solutions rule pack checks the synthesised template against
+# Well-Architected guidance and fails `cdk synth` on any unsuppressed finding.
+# Deliberate exceptions live in cdk/stack.py as NagSuppressions with reasons;
+# anything else is a defect to fix rather than to silence here.
+cdk.Aspects.of(app).add(AwsSolutionsChecks(verbose=True))
 
 app.synth()

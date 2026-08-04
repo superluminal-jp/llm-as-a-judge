@@ -21,6 +21,13 @@ from typing import TYPE_CHECKING
 
 from aws_lambda_powertools import Logger
 
+from src.observability import (
+    MetricName,
+    add_count,
+    add_latency_ms,
+    tracer,
+)
+
 if TYPE_CHECKING:
     from src.criteria import CriterionDefinition, EvaluationCriteria
     from src.providers import BaseProvider
@@ -379,6 +386,9 @@ def _aggregate_parallel_results(
 # ---------------------------------------------------------------------------
 
 
+# capture_response=False keeps the judge's reasoning — which quotes the
+# submitted material — out of X-Ray metadata.
+@tracer.capture_method(capture_response=False)
 def _evaluate_one_criterion(
     criterion: "CriterionDefinition",
     prompt: str,
@@ -414,6 +424,7 @@ def _evaluate_one_criterion(
         timeout=timeout,
     )
     llm_duration_ms = round((time.perf_counter() - llm_start) * 1000)
+    add_latency_ms(MetricName.JUDGE_LATENCY_MS, llm_duration_ms)
     if llm_duration_ms >= _LLM_DURATION_LOG_THRESHOLD_MS:
         logger.info(
             "Judge LLM call completed (single criterion)",
@@ -502,9 +513,33 @@ def evaluate(
         }
         results: list[tuple[str, str, float | None, str]] = []
         for fut in as_completed(futures):
-            results.append(fut.result())
+            try:
+                results.append(fut.result())
+            except Exception as exc:
+                # Deliberate fail-fast: a criterion that could not be scored is
+                # not the same as one judged "not assessable", and silently
+                # dropping it would understate the rubric while still returning
+                # a response that looks complete. The metric makes the failure
+                # visible without changing the response contract.
+                add_count(MetricName.CRITERION_EVALUATION_FAILED)
+                logger.error(
+                    "Criterion evaluation failed",
+                    extra={
+                        "criterion_name": futures[fut].name,
+                        "model": model,
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                raise
 
     results.sort(key=lambda r: order[r[0]])
+
+    not_assessable = sum(
+        1 for _, assessability, _, _ in results
+        if assessability == ASSESSABILITY_NOT_ASSESSABLE
+    )
+    if not_assessable:
+        add_count(MetricName.NOT_ASSESSABLE_COUNT, not_assessable)
 
     summary_prompt = _build_summary_prompt(
         prompt_t,
@@ -524,6 +559,7 @@ def evaluate(
         timeout=timeout,
     )
     llm_duration_ms = round((time.perf_counter() - llm_start) * 1000)
+    add_latency_ms(MetricName.JUDGE_LATENCY_MS, llm_duration_ms)
     if llm_duration_ms >= _LLM_DURATION_LOG_THRESHOLD_MS:
         logger.info(
             "Judge LLM call completed (summary)",

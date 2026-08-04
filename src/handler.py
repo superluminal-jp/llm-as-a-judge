@@ -21,6 +21,7 @@ from aws_lambda_powertools.utilities.typing import LambdaContext
 from src.config import get_config, validate_for_provider
 from src.criteria import DefaultCriteria, load_from_s3
 from src.evaluator import evaluate
+from src.observability import MetricName, add_count, metrics, tracer
 from src.providers import get_provider
 
 logger = Logger(service="llm-judge")
@@ -196,6 +197,11 @@ def _validate_event(
 # ---------------------------------------------------------------------------
 
 
+# capture_response=False: the result carries the submitted text's judge
+# reasoning, which does not belong in X-Ray metadata (both for size and because
+# the evaluated material may be sensitive).
+@metrics.log_metrics(capture_cold_start_metric=True)
+@tracer.capture_lambda_handler(capture_response=False)
 @logger.inject_lambda_context(log_event=False)
 def lambda_handler(event: dict, context: LambdaContext) -> dict:
     """Evaluate an LLM response using a judge LLM.
@@ -222,6 +228,10 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
     """
     start_time = time.perf_counter()
     request_id = getattr(context, "aws_request_id", None)
+    if request_id:
+        # Ties every log line in this invocation together, and matches the
+        # request ID reported back to the caller by the Lambda runtime.
+        logger.set_correlation_id(request_id)
 
     try:
         prompt_text, response_text, prompt_descriptor, response_descriptor = (
@@ -237,6 +247,13 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
         )
 
         validate_for_provider(config, provider_name)
+
+        # Dimensions stay low-cardinality: provider and model only. Request IDs
+        # and criterion names would multiply the metric count without bound.
+        metrics.add_dimension(name="provider", value=provider_name)
+        metrics.add_dimension(name="judge_model", value=judge_model)
+        tracer.put_annotation(key="provider", value=provider_name)
+        tracer.put_annotation(key="judge_model", value=judge_model)
 
         # Load evaluation criteria.
         criteria_file: str | None = event.get("criteria_file")
@@ -289,6 +306,8 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
         if "overall_score" in result:
             log_extra["overall_score"] = result["overall_score"]
 
+        add_count(MetricName.EVALUATIONS_COMPLETED)
+
         if duration_sec >= _DURATION_LOG_THRESHOLD_SEC:
             logger.info("Evaluation completed", extra=log_extra)
         else:
@@ -298,6 +317,7 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
 
     except (ValidationError, ConfigurationError, ProviderError, CriteriaLoadError) as exc:
         duration_ms = round((time.perf_counter() - start_time) * 1000)
+        add_count(MetricName.EVALUATIONS_FAILED)
         logger.error(
             "Evaluation failed",
             extra={
@@ -312,6 +332,7 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
 
     except LlmJudgeError as exc:
         duration_ms = round((time.perf_counter() - start_time) * 1000)
+        add_count(MetricName.EVALUATIONS_FAILED)
         logger.error(
             "Evaluation failed (unknown LlmJudgeError)",
             extra={
@@ -326,6 +347,7 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
 
     except Exception as exc:
         duration_ms = round((time.perf_counter() - start_time) * 1000)
+        add_count(MetricName.EVALUATIONS_FAILED)
         logger.critical(
             "Unexpected error in Lambda handler",
             extra={

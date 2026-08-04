@@ -37,6 +37,8 @@ import botocore.config
 import botocore.exceptions
 from aws_lambda_powertools import Logger
 
+from src.observability import MetricName, add_count
+
 if TYPE_CHECKING:
     from src.config import Config
 
@@ -176,6 +178,7 @@ class BedrockProvider:
             )
 
             if error_code in _THROTTLING_CODES:
+                add_count(MetricName.BEDROCK_THROTTLED)
                 raise ProviderError(
                     f"Bedrock throttled the request for model '{model}' and "
                     f"client-side retries were exhausted [{error_code}]: "
