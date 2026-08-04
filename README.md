@@ -1,7 +1,7 @@
 # LLM-as-a-Judge
 
-[![Tests](https://img.shields.io/badge/tests-105%20passing-brightgreen)](#テスト)
-[![Python](https://img.shields.io/badge/python-3.12-blue)](https://python.org)
+[![Tests](https://img.shields.io/badge/tests-201%20passing-brightgreen)](#テスト)
+[![Python](https://img.shields.io/badge/python-3.13-blue)](https://python.org)
 [![AWS Lambda](https://img.shields.io/badge/runtime-AWS%20Lambda-orange)](https://aws.amazon.com/lambda/)
 
 LLM が生成した回答を、別の LLM を審査役（ジャッジ）として多角的に評価する AWS Lambda 関数。Anthropic・OpenAI・Amazon Bedrock をジャッジモデルとして利用可能。
@@ -23,17 +23,31 @@ LLM が生成した回答を、別の LLM を審査役（ジャッジ）とし�
 
 ## アーキテクチャ
 
+同じイベントを受け付け、**同じレスポンス**を返す実行経路が 2 つある。
+
+**経路 1: 単一 Lambda**（`aws lambda invoke`）
+
 ```
 Lambda イベント（`prompt` / `response` は少なくとも一方必須、[provider]、[criteria_file]、任意 descriptor）
     └─→ handler.lambda_handler
         ├─→ criteria.load_from_s3()   または   DefaultCriteria.balanced()
         ├─→ providers.get_provider()  → AnthropicProvider / OpenAIProvider / BedrockProvider
         └─→ evaluator.evaluate()
-              ├─→ build_evaluation_prompt_single_criterion()  ← クライテリアごとに並列実行
+              ├─→ build_evaluation_prompt_single_criterion()  ← 最大 MAX_PARALLEL_CRITERIA 並列
               ├─→ provider.complete()
               └─→ parse_single_criterion_response()
                   └─→ { criterion_scores, criterion_reasoning, criterion_assessability, reasoning, judge_model, provider }
 ```
+
+**経路 2: Step Functions ワークフロー**（`aws stepfunctions start-sync-execution`）
+
+```
+Prepare → Map(MaxConcurrency)[EvaluateCriterion] → Summarize
+```
+
+クライテリア単位のリトライ（バックオフ + FULL jitter）と失敗箇所の可視化をサービス側に任せられる。
+payload は 256KB のステート上限を避けるため S3 経由（クレームチェック）で渡す。
+クライテリア数が多い場合はこちらを使う。詳細は [docs/architecture.md](docs/architecture.md)。
 
 各クライテリアは独立した LLM 呼び出しでスコアリングされ、総合スコアは算出しない（クライテリア間の重み付けを前提としない設計）。
 
@@ -42,15 +56,21 @@ Lambda イベント（`prompt` / `response` は少なくとも一方必須、[pr
 ```
 src/
 ├── __init__.py
-├── handler.py          # Lambda エントリポイント、例外階層
+├── handler.py          # 単一 Lambda エントリポイント、例外階層
 ├── evaluator.py        # プロンプト構築、LLM 呼び出し、JSON パース、スコア集約
 ├── criteria.py         # EvaluationCriteria データクラス、S3 ローダー、デフォルト定義
-├── config.py           # 環境変数ベースの Config（コールドスタートキャッシュ付き）
+├── config.py           # 環境変数 + Secrets Manager からの Config
+├── jobs.py             # クレームチェック（S3 経由の payload 受け渡し）
+├── observability.py    # Powertools Tracer / Metrics の共有インスタンス
+├── handlers/           # Step Functions の各ステップ
+│   ├── prepare.py             # 検証・criteria 解決・ジョブ退避
+│   ├── evaluate_criterion.py  # クライテリア 1 件の評価
+│   └── summarize.py           # 結果集約・総評生成
 └── providers/
     ├── __init__.py     # BaseProvider プロトコル + get_provider() ファクトリ
     ├── anthropic.py    # 同期 Anthropic クライアント
     ├── openai.py       # 同期 OpenAI クライアント
-    └── bedrock.py      # Bedrock Converse API（IAM 認証）
+    └── bedrock.py      # Bedrock Converse API（IAM 認証、botocore adaptive retry）
 
 criteria/
 ├── default.json                          # 汎用評価クライテリア（7 軸）
@@ -67,11 +87,15 @@ contracts/
 └── criteria-file.json     # S3 クライテリア JSON
 
 tests/
-├── conftest.py         # 共有フィクスチャ
-├── test_handler.py     # lambda_handler() テスト
-├── test_evaluator.py   # プロンプト構築・レスポンスパーステスト
-├── test_criteria.py    # EvaluationCriteria・S3 ローダーテスト
-└── test_providers.py   # プロバイダークライアントテスト
+├── conftest.py                 # 共有フィクスチャ
+├── test_handler.py             # lambda_handler() テスト
+├── test_evaluator.py           # プロンプト構築・パース・並列度上限テスト
+├── test_criteria.py            # EvaluationCriteria・S3 ローダーテスト
+├── test_providers.py           # プロバイダークライアント・botocore 設定テスト
+├── test_config.py              # Secrets Manager からの API キー解決テスト
+├── test_observability.py       # メトリクス計装テスト
+├── test_workflow_handlers.py   # ワークフロー各ステップ + 2 経路の出力一致テスト
+└── test_cdk_stack.py           # IaC アサーション + cdk-nag 検査（Docker 不要）
 
 config/
 ├── parameters.json         # デプロイ・CDK 用パラメータ（リージョン、default_provider、criteria バケット ARN 等）
@@ -80,12 +104,13 @@ config/
 
 cdk/
 ├── app.py              # CDK App エントリポイント
-├── stack.py            # LlmJudgeStack（Lambda + IAM + 環境変数）
+├── stack.py            # LlmJudgeStack（Lambda×4 + Step Functions + IAM/KMS/S3/SQS/CloudWatch）
 └── requirements.txt    # CDK 依存関係
 
 scripts/
-├── deploy.sh                  # Bootstrap + cdk deploy ラッパー
-└── lambda_pattern_tests.py    # デプロイ済み Lambda を複数イベントパターンで検証（Bedrock Nova）
+├── deploy.sh                  # cdk deploy ラッパー（bootstrap は --bootstrap 時のみ）
+└── lambda_pattern_tests.py    # デプロイ済みスタックを複数パターンで検証
+                               # （TARGET=lambda|workflow、Bedrock Nova）
 
 docs/
 ├── README.md              # ドキュメント索引
@@ -237,16 +262,27 @@ Lambda 実行ロールに対象バケットの `s3:GetObject` が必要（[`conf
 | 変数 | デフォルト | 説明 |
 |------|-----------|------|
 | `DEFAULT_PROVIDER` | `bedrock` | イベントで `provider` 未指定時のプロバイダー |
-| `ANTHROPIC_API_KEY` | — | Anthropic 利用時に必須 |
+| `API_KEYS_SECRET_NAME` | — | Anthropic / OpenAI の API キーを格納した Secrets Manager シークレット名。CDK が設定する |
+| `ANTHROPIC_API_KEY` | — | 設定時はシークレットより優先。ローカル開発用 |
 | `ANTHROPIC_MODEL` | `claude-sonnet-4-6` | デフォルト Anthropic ジャッジモデル |
-| `OPENAI_API_KEY` | — | OpenAI 利用時に必須 |
+| `OPENAI_API_KEY` | — | 設定時はシークレットより優先。ローカル開発用 |
 | `OPENAI_MODEL` | `gpt-4o` | デフォルト OpenAI ジャッジモデル |
-| `BEDROCK_MODEL` | `anthropic.claude-sonnet-4-6` | デフォルト Bedrock ジャッジモデル |
-| `REQUEST_TIMEOUT` | `30` | HTTP タイムアウト（秒） |
+| `BEDROCK_MODEL` | `jp.anthropic.claude-sonnet-4-6` | デフォルト Bedrock ジャッジモデル（`config/parameters.json` から設定） |
+| `REQUEST_TIMEOUT` | `30`（CDK デプロイ時は `60`） | HTTP / Bedrock タイムアウト（秒） |
+| `MAX_PARALLEL_CRITERIA` | `5` | 1 回の評価で同時に走るジャッジ呼び出しの上限 |
+| `JOBS_BUCKET` | — | ワークフローの payload 退避先バケット。CDK が設定する |
 | `LOG_LEVEL` | `INFO` | Powertools ログレベル |
 | `POWERTOOLS_SERVICE_NAME` | `llm-judge` | Lambda Powertools サービスタグ |
+| `POWERTOOLS_METRICS_NAMESPACE` | `LlmJudge` | EMF メトリクスの名前空間 |
 
 > Bedrock は Lambda 実行ロールの IAM 認証を使用するため、API キー不要。
+>
+> **API キーは Lambda 環境変数に置かない。** デプロイ後に Secrets Manager へ投入する:
+>
+> ```bash
+> aws secretsmanager put-secret-value --secret-id llm-judge-dev/api-keys \
+>   --secret-string '{"ANTHROPIC_API_KEY":"sk-ant-...","OPENAI_API_KEY":""}'
+> ```
 
 ## エラーハンドリング
 
@@ -281,60 +317,88 @@ pytest tests/test_evaluator.py -v
 
 - AWS CLI（適切な認証情報が設定済み）
 - CDK CLI: `npm install -g aws-cdk`
-- Docker（**必須** — `cdk synth` / `cdk deploy` 時の Lambda アセットバンドルに使用。デーモンが起動していること）
+- Docker（`cdk synth` / `cdk deploy` の Lambda アセットバンドルに**必須**。デーモンが起動していること。
+  なお `pytest` は Docker なしで全件通る）
 
 ### クイックデプロイ
 
 ```bash
-# 環境変数を設定
-export ANTHROPIC_API_KEY=sk-ant-...   # Anthropic を使う場合
+# 初回のみ（アカウント・リージョン単位の一度きりの操作）
+./scripts/deploy.sh --env dev --bootstrap
 
-# デプロイ（初回は CDK bootstrap を自動実行）
-./scripts/deploy.sh
+# 以降のデプロイ
+./scripts/deploy.sh --env dev
 
 # リージョン指定
-./scripts/deploy.sh --region ap-northeast-1
+./scripts/deploy.sh --env dev --region ap-northeast-1
 
-# S3 クライテリアバケットアクセスを付与してデプロイ
-CRITERIA_BUCKET_ARN=arn:aws:s3:::my-bucket ./scripts/deploy.sh
+# 既存の S3 クライテリアバケットを使う（未指定ならスタックが作成する）
+CRITERIA_BUCKET_ARN=arn:aws:s3:::my-bucket ./scripts/deploy.sh --env dev
 ```
+
+> `bootstrap` は毎回は実行されない。CloudFormation 実行ロールに広い権限を与える
+> 一度きりの操作なので、`--bootstrap` を明示したときだけ走る。付与されるポリシーは
+> `AdministratorAccess` ではなく、このスタックが作るサービスに絞った集合
+> （`CDK_BOOTSTRAP_POLICIES` で上書き可）。
 
 ### パラメータファイル
 
-リポジトリ直下の [`config/parameters.json`](config/parameters.json) で `aws_region`・`default_provider`・`criteria_bucket_arn` などを指定する（[`config/README.md`](config/README.md) 参照）。`cdk deploy` の `--context` は同じキーを上書きできる。
+リポジトリ直下の [`config/parameters.json`](config/parameters.json) で `aws_region`・`environment`・`default_provider`・`bedrock_model`・`bedrock_allowed_models`・`bedrock_inference_profile_regions`・`criteria_bucket_arn` を指定する（[`config/README.md`](config/README.md) 参照）。`cdk deploy` の `--context` はスカラーキーを上書きできる。
+
+アカウント ID を含む値は、コミットしない `config/parameters.local.json` に置く。
 
 ### 手動 CDK デプロイ
 
 ```bash
 pip install -r cdk/requirements.txt
-cdk bootstrap
-cdk deploy LlmJudgeStack \
+export CDK_DEFAULT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+cdk deploy LlmJudgeStack-dev \
   --app "python3 cdk/app.py" \
   --require-approval never \
-  --context criteria_bucket_arn=arn:aws:s3:::my-bucket
+  --context environment=dev
 ```
+
+`cdk synth` / `cdk deploy` は cdk-nag の AWS Solutions ルールパックを通す。未抑制の指摘があれば合成が失敗する。
 
 ### デプロイ後の API キー設定
 
+API キーは Lambda 環境変数ではなく Secrets Manager に置く。スタックが空のシークレットを作るので、値を投入する：
+
 ```bash
-aws lambda update-function-configuration \
-  --function-name <function-name> \
-  --environment "Variables={ANTHROPIC_API_KEY=sk-ant-...,DEFAULT_PROVIDER=anthropic}"
+aws secretsmanager put-secret-value \
+  --secret-id llm-judge-dev/api-keys \
+  --secret-string '{"ANTHROPIC_API_KEY":"sk-ant-...","OPENAI_API_KEY":""}'
 ```
 
-### Lambda 呼び出し
+Bedrock は Lambda 実行ロールの IAM 認証を使うため、この手順は不要。
+
+### 呼び出し
+
+**単一 Lambda 経路**
 
 ```bash
 aws lambda invoke \
-  --function-name <function-name> \
+  --function-name llm-judge-dev \
   --payload '{"prompt":"機械学習とは何ですか？","response":"機械学習はAIの一分野です...","provider":"bedrock"}' \
   --cli-binary-format raw-in-base64-out \
   result.json && cat result.json
 ```
 
+**Step Functions ワークフロー経路**（クライテリア数が多い場合）
+
+```bash
+aws stepfunctions start-sync-execution \
+  --state-machine-arn <StateMachineArn 出力値> \
+  --input '{"prompt":"機械学習とは何ですか？","response":"機械学習はAIの一分野です...","provider":"bedrock"}' \
+  --query output --output text
+```
+
+どちらも同じイベントを受け付け、同じレスポンスを返す。
+
 ## テスト
 
-94 テスト、実際の API 呼び出しなし（`unittest.mock` + `moto[s3]` でモック）：
+201 テスト、実際の API 呼び出しなし（`unittest.mock` + `moto[s3]` でモック）。
+CDK テンプレートの検証もテスト内でスタックを合成して行うため、**Docker なしで全件実行できる**：
 
 ```bash
 pytest                                         # 全テスト
@@ -342,14 +406,29 @@ pytest tests/test_handler.py -v               # ハンドラーテスト
 pytest tests/test_evaluator.py -v             # 評価ロジックテスト
 pytest tests/test_criteria.py -v              # クライテリア・S3 テスト
 pytest tests/test_providers.py -v             # プロバイダーテスト
-pytest --cov=src --cov-report=term-missing    # カバレッジ付き（src 合計約 88%）
+pytest tests/test_workflow_handlers.py -v     # ワークフロー + 2 経路の出力一致
+pytest tests/test_cdk_stack.py -v             # IaC アサーション + cdk-nag
+pytest --cov=src --cov-report=term-missing    # カバレッジ付き
 ```
 
 ## CDK スタックリソース
 
-- **Lambda 関数**: Python 3.12、512 MB、60 秒タイムアウト
-- **バンドル**: CDK が公式 Python 3.12 イメージ上で `pip install` と `src/` のコピーを実行（Docker 必須）
-- **IAM ポリシー**: すべての基盤モデルに対する `bedrock:InvokeModel` + `bedrock:Converse`
-- **IAM ポリシー**（オプション）: クライテリアバケットへの `s3:GetObject`
-- **CloudWatch Logs**: Lambda ランタイムが自動作成
-- **Outputs**: `LambdaFunctionArn`、`LambdaFunctionName`
+- **Lambda 関数 ×4**: Python 3.13 / ARM64、512 MB（prepare のみ 256 MB）、300 秒タイムアウト、
+  予約同時実行数 10、X-Ray 有効、JSON ログ形式。
+  直接呼び出し用 1 つ + ワークフロー用 3 つ（prepare / evaluate-criterion / summarize）
+- **Step Functions**: Express ステートマシン（Map の `MaxConcurrency` = 5、
+  スロットリング系のリトライは BackoffRate 2 / MaxAttempts 4 / FULL jitter）
+- **バンドル**: CDK が公式 Python 3.13 イメージ上で `pip install` と `src/` のコピーを実行（Docker 必須）
+- **IAM**: `bedrock:InvokeModel` は `bedrock_allowed_models` で指定したモデルと
+  推論プロファイル ARN のみに限定。関数ごとにロールを分離（prepare は Bedrock に到達できず、
+  criterion worker は jobs バケットに書き込めない）
+- **Secrets Manager**: API キー用シークレット（KMS CMK 暗号化）
+- **KMS**: 環境変数・シークレット・DLQ・アラームトピックを暗号化する CMK（自動ローテーション有効）
+- **S3**: criteria バケット（暗号化・バージョニング・TLS 必須・アクセスログ）、
+  アクセスログバケット、jobs バケット（7 日で失効）
+- **SQS**: 非同期呼び出し失敗用 DLQ（KMS 暗号化、14 日保持）
+- **CloudWatch**: ロググループ（保持期間 30 日 / prod 90 日）、
+  アラーム 5 件（エラー・スロットル・p99 実行時間・DLQ 滞留・ワークフロー失敗）→ SNS、
+  ダッシュボード
+- **Outputs**: `LambdaFunctionArn`、`LambdaFunctionName`、`StateMachineArn`、
+  `CriteriaBucketName`、`JobsBucketName`、`ApiKeysSecretName`、`DeadLetterQueueUrl`、`AlarmTopicArn`

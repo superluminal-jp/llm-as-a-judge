@@ -46,6 +46,8 @@ import aws_cdk.aws_s3_deployment as s3_deployment
 import aws_cdk.aws_secretsmanager as secretsmanager
 import aws_cdk.aws_sns as sns
 import aws_cdk.aws_sqs as sqs
+import aws_cdk.aws_stepfunctions as sfn
+import aws_cdk.aws_stepfunctions_tasks as tasks
 from cdk_nag import NagSuppressions
 from constructs import Construct
 
@@ -67,7 +69,33 @@ _REQUEST_TIMEOUT_SEC = 60
 
 # Upper bound on concurrent judge LLM calls within a single invocation. Caps the
 # fan-out that criteria count would otherwise dictate, protecting Bedrock quota.
+# Also used as the Map state's MaxConcurrency in the Step Functions workflow.
 _MAX_PARALLEL_CRITERIA = 5
+
+# Per-function reserved concurrency. Bounds how many invocations can run at once
+# and therefore how hard the service can push against Bedrock account quota.
+_RESERVED_CONCURRENCY = 10
+
+# How long staged job payloads survive in the jobs bucket. Long enough to debug
+# a failed execution, short enough that submitted material is not retained.
+_JOB_RETENTION_DAYS = 7
+
+# Express workflows are capped at 5 minutes; this keeps the state machine's own
+# timeout just inside that so a hung execution fails as a timeout rather than
+# being cut off by the service limit.
+_STATE_MACHINE_TIMEOUT_SEC = 290
+
+# Per-criterion retry policy, applied to the Map state. Backoff happens between
+# Lambda invocations, so a throttled criterion costs no billed execution time.
+_RETRYABLE_ERRORS = [
+    "ThrottlingException",
+    "TooManyRequestsException",
+    "ServiceQuotaExceededException",
+    "ModelTimeoutException",
+    "Lambda.TooManyRequestsException",
+    "Lambda.ServiceException",
+    "Lambda.SdkClientException",
+]
 
 
 class LlmJudgeStack(cdk.Stack):
@@ -288,135 +316,238 @@ class LlmJudgeStack(cdk.Stack):
         )
 
         # -----------------------------------------------------------------
-        # CloudWatch Logs — explicit group so retention is bounded
+        # S3 — jobs bucket (claim-check payload staging)
         # -----------------------------------------------------------------
-        # Without this the Lambda service lazily creates the group with
-        # "Never expire" retention, which accrues storage cost indefinitely.
+        # Step Functions caps inter-state data at 256 KB, so the prepare step
+        # writes the full evaluation payload here and only an s3:// URI travels
+        # through the workflow. Objects are transient; the lifecycle rule is the
+        # only thing that deletes them, which leaves a failed execution's
+        # payload available for debugging in the meantime.
 
-        log_group = logs.LogGroup(
+        jobs_bucket = s3.Bucket(
             self,
-            "LlmJudgeLogGroup",
-            log_group_name=f"/aws/lambda/{resource_prefix}",
-            retention=(
-                logs.RetentionDays.THREE_MONTHS
-                if is_production
-                else logs.RetentionDays.ONE_MONTH
+            "JobsBucket",
+            encryption=s3.BucketEncryption.S3_MANAGED,
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+            enforce_ssl=True,
+            lifecycle_rules=[
+                s3.LifecycleRule(
+                    id="ExpireStagedJobs",
+                    expiration=cdk.Duration.days(_JOB_RETENTION_DAYS),
+                    abort_incomplete_multipart_upload_after=cdk.Duration.days(1),
+                )
+            ],
+            server_access_logs_bucket=(
+                access_logs_bucket if stack_manages_bucket else None
+            ),
+            server_access_logs_prefix=(
+                "jobs-bucket/" if stack_manages_bucket else None
             ),
             removal_policy=(
                 cdk.RemovalPolicy.RETAIN if is_production else cdk.RemovalPolicy.DESTROY
             ),
+            auto_delete_objects=not is_production,
         )
 
         # -----------------------------------------------------------------
-        # Lambda function
+        # Lambda functions
         # -----------------------------------------------------------------
+        # Four entry points share one asset. Splitting them gives each step of
+        # the workflow its own execution role, so the criterion worker — the
+        # only one that talks to Bedrock — cannot write to the jobs bucket, and
+        # the prepare step cannot invoke a model.
 
-        function = lambda_.Function(
-            self,
-            "LlmJudgeFunction",
-            function_name=resource_prefix,
-            runtime=lambda_.Runtime.PYTHON_3_13,
-            # ARM64/Graviton: cheaper per GB-second and equally suited to this
-            # I/O-bound workload, which spends its time waiting on model APIs.
-            architecture=lambda_.Architecture.ARM_64,
-            # Handler path: src.handler module -> lambda_handler function.
-            # The src/ package is preserved in the bundle so that intra-package
-            # imports (from src.config, from src.criteria, ...) resolve correctly.
-            handler="src.handler.lambda_handler",
+        shared_code = lambda_.Code.from_asset(
+            ".",
+            # `exclude` keeps unrelated files out of the asset hash so that
+            # editing docs or tests does not trigger a Lambda redeploy.
+            exclude=[
+                ".git",
+                ".github",
+                "cdk",
+                "cdk.out",
+                "criteria",
+                "docs",
+                "examples",
+                "contracts",
+                "scripts",
+                "tests",
+                ".venv",
+                "venv",
+                "**/__pycache__",
+                "**/*.pyc",
+            ],
             # Bundle src/ as a package alongside pip-installed dependencies
             # (requires Docker for cdk synth / deploy).
             # Path is relative to cdk.json (repo root), not the cdk/ package dir.
-            # `exclude` keeps unrelated files out of the asset hash so that
-            # editing docs or tests does not trigger a Lambda redeploy.
-            code=lambda_.Code.from_asset(
-                ".",
-                exclude=[
-                    ".git",
-                    ".github",
-                    "cdk",
-                    "cdk.out",
-                    "criteria",
-                    "docs",
-                    "examples",
-                    "contracts",
-                    "scripts",
-                    "tests",
-                    ".venv",
-                    "venv",
-                    "**/__pycache__",
-                    "**/*.pyc",
+            bundling=cdk.BundlingOptions(
+                image=lambda_.Runtime.PYTHON_3_13.bundling_image,
+                command=[
+                    "bash",
+                    "-c",
+                    (
+                        # Install to /tmp first: pip -t onto a Docker volume can hit
+                        # cross-device rename / EPERM on Colima (macOS).
+                        "pip install --no-cache-dir -r requirements.txt -t /tmp/deps"
+                        " && mkdir -p /asset-output && cp -a /tmp/deps/. /asset-output/"
+                        " && cp -r src /asset-output/src"
+                    ),
                 ],
-                bundling=cdk.BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_13.bundling_image,
-                    command=[
-                        "bash",
-                        "-c",
-                        (
-                            # Install to /tmp first: pip -t onto a Docker volume can hit
-                            # cross-device rename / EPERM on Colima (macOS).
-                            "pip install --no-cache-dir -r requirements.txt -t /tmp/deps"
-                            " && mkdir -p /asset-output && cp -a /tmp/deps/. /asset-output/"
-                            " && cp -r src /asset-output/src"
-                        ),
-                    ],
-                ),
-            ),
-            memory_size=512,
-            timeout=cdk.Duration.seconds(_LAMBDA_TIMEOUT_SEC),
-            # Bounds the blast radius of a burst against Bedrock account quota.
-            reserved_concurrent_executions=10,
-            dead_letter_queue=dead_letter_queue,
-            environment_encryption=encryption_key,
-            tracing=lambda_.Tracing.ACTIVE,
-            log_group=log_group,
-            # applicationLogLevelV2 / systemLogLevelV2 require JSON logging_format.
-            logging_format=lambda_.LoggingFormat.JSON,
-            application_log_level_v2=lambda_.ApplicationLogLevel.INFO,
-            system_log_level_v2=lambda_.SystemLogLevel.WARN,
-            environment={
-                "DEFAULT_PROVIDER": default_provider,
-                "BEDROCK_MODEL": bedrock_model,
-                "ANTHROPIC_MODEL": "claude-sonnet-4-6",
-                "OPENAI_MODEL": "gpt-4o",
-                "REQUEST_TIMEOUT": str(_REQUEST_TIMEOUT_SEC),
-                "MAX_PARALLEL_CRITERIA": str(_MAX_PARALLEL_CRITERIA),
-                # Anthropic / OpenAI API keys are read from this secret at
-                # runtime. They are never stored as environment variables.
-                "API_KEYS_SECRET_NAME": api_keys_secret.secret_name,
-                "POWERTOOLS_SERVICE_NAME": "llm-judge",
-                "POWERTOOLS_METRICS_NAMESPACE": "LlmJudge",
-                "LOG_LEVEL": "INFO",
-            },
-            description=(
-                "LLM-as-a-Judge: evaluates LLM responses using a multi-criteria "
-                "rubric via Anthropic, OpenAI, or Amazon Bedrock."
             ),
         )
 
-        # -----------------------------------------------------------------
-        # IAM — Bedrock, scoped to the configured models only
-        # -----------------------------------------------------------------
+        shared_environment = {
+            "DEFAULT_PROVIDER": default_provider,
+            "BEDROCK_MODEL": bedrock_model,
+            "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+            "OPENAI_MODEL": "gpt-4o",
+            "REQUEST_TIMEOUT": str(_REQUEST_TIMEOUT_SEC),
+            "MAX_PARALLEL_CRITERIA": str(_MAX_PARALLEL_CRITERIA),
+            "JOBS_BUCKET": jobs_bucket.bucket_name,
+            # Anthropic / OpenAI API keys are read from this secret at
+            # runtime. They are never stored as environment variables.
+            "API_KEYS_SECRET_NAME": api_keys_secret.secret_name,
+            "POWERTOOLS_SERVICE_NAME": "llm-judge",
+            "POWERTOOLS_METRICS_NAMESPACE": "LlmJudge",
+            "LOG_LEVEL": "INFO",
+        }
 
-        function.add_to_role_policy(
-            iam.PolicyStatement(
-                sid="BedrockInvokeConfiguredModels",
-                effect=iam.Effect.ALLOW,
-                # The Converse API is authorised through bedrock:InvokeModel;
-                # bedrock:Converse is granted alongside it to match the action
-                # naming used by earlier revisions of this stack. Verify against
-                # the IAM Service Authorization Reference before removing it.
-                actions=["bedrock:InvokeModel", "bedrock:Converse"],
-                resources=self._bedrock_model_resources(
-                    allowed_models, profile_regions
+        def _make_function(
+            construct_key: str,
+            name_suffix: str,
+            handler_path: str,
+            description: str,
+            *,
+            timeout_sec: int,
+            memory_mb: int = 512,
+            with_dlq: bool = False,
+        ) -> lambda_.Function:
+            """Create one of the service's Lambda functions from the shared asset."""
+            function_log_group = logs.LogGroup(
+                self,
+                f"{construct_key}LogGroup",
+                log_group_name=f"/aws/lambda/{resource_prefix}{name_suffix}",
+                retention=(
+                    logs.RetentionDays.THREE_MONTHS
+                    if is_production
+                    else logs.RetentionDays.ONE_MONTH
+                ),
+                removal_policy=(
+                    cdk.RemovalPolicy.RETAIN
+                    if is_production
+                    else cdk.RemovalPolicy.DESTROY
                 ),
             )
+            return lambda_.Function(
+                self,
+                construct_key,
+                function_name=f"{resource_prefix}{name_suffix}",
+                runtime=lambda_.Runtime.PYTHON_3_13,
+                # ARM64/Graviton: cheaper per GB-second and equally suited to
+                # this I/O-bound workload, which spends its time waiting on
+                # model APIs.
+                architecture=lambda_.Architecture.ARM_64,
+                handler=handler_path,
+                code=shared_code,
+                memory_size=memory_mb,
+                timeout=cdk.Duration.seconds(timeout_sec),
+                # Bounds the blast radius of a burst against Bedrock quota.
+                reserved_concurrent_executions=_RESERVED_CONCURRENCY,
+                dead_letter_queue=dead_letter_queue if with_dlq else None,
+                environment_encryption=encryption_key,
+                tracing=lambda_.Tracing.ACTIVE,
+                log_group=function_log_group,
+                # applicationLogLevelV2 / systemLogLevelV2 require JSON format.
+                logging_format=lambda_.LoggingFormat.JSON,
+                application_log_level_v2=lambda_.ApplicationLogLevel.INFO,
+                system_log_level_v2=lambda_.SystemLogLevel.WARN,
+                environment=dict(shared_environment),
+                description=description,
+            )
+
+        # Direct-invoke entry point. Retained as a fully functional path, not a
+        # deprecated shim: it evaluates every criterion in one invocation, which
+        # stays the simplest option for small criteria sets and keeps the
+        # existing `aws lambda invoke` contract working unchanged.
+        function = _make_function(
+            "LlmJudgeFunction",
+            "",
+            "src.handler.lambda_handler",
+            (
+                "LLM-as-a-Judge: evaluates LLM responses using a multi-criteria "
+                "rubric via Anthropic, OpenAI, or Amazon Bedrock (single-Lambda "
+                "path)."
+            ),
+            timeout_sec=_LAMBDA_TIMEOUT_SEC,
+            with_dlq=True,
+        )
+
+        prepare_function = _make_function(
+            "PrepareFunction",
+            "-prepare",
+            "src.handlers.prepare.handler",
+            "LLM-as-a-Judge workflow: validate the request and stage it in S3.",
+            timeout_sec=60,
+            memory_mb=256,
+        )
+
+        evaluate_criterion_function = _make_function(
+            "EvaluateCriterionFunction",
+            "-evaluate-criterion",
+            "src.handlers.evaluate_criterion.handler",
+            "LLM-as-a-Judge workflow: score exactly one criterion.",
+            timeout_sec=_LAMBDA_TIMEOUT_SEC,
+        )
+
+        summarize_function = _make_function(
+            "SummarizeFunction",
+            "-summarize",
+            "src.handlers.summarize.handler",
+            "LLM-as-a-Judge workflow: synthesise the summary and final response.",
+            timeout_sec=_LAMBDA_TIMEOUT_SEC,
         )
 
         # -----------------------------------------------------------------
-        # IAM — Secrets Manager (this secret only)
+        # IAM — per-function, least privilege
         # -----------------------------------------------------------------
 
-        api_keys_secret.grant_read(function)
+        bedrock_statement = iam.PolicyStatement(
+            sid="BedrockInvokeConfiguredModels",
+            effect=iam.Effect.ALLOW,
+            # The Converse API is authorised through bedrock:InvokeModel;
+            # bedrock:Converse is granted alongside it to match the action
+            # naming used by earlier revisions of this stack. Verify against
+            # the IAM Service Authorization Reference before removing it.
+            actions=["bedrock:InvokeModel", "bedrock:Converse"],
+            resources=self._bedrock_model_resources(allowed_models, profile_regions),
+        )
+
+        criteria_read_statement = iam.PolicyStatement(
+            sid="S3GetCriteriaObject",
+            effect=iam.Effect.ALLOW,
+            actions=["s3:GetObject"],
+            resources=[criteria_bucket.arn_for_objects("*")],
+        )
+
+        # Only the functions that actually call a model get Bedrock access.
+        # PrepareFunction never invokes one.
+        for model_caller in (
+            function,
+            evaluate_criterion_function,
+            summarize_function,
+        ):
+            model_caller.add_to_role_policy(bedrock_statement)
+            api_keys_secret.grant_read(model_caller)
+
+        # Only the functions that resolve a criteria file read the criteria
+        # bucket. The workflow resolves criteria once, in PrepareFunction.
+        for criteria_reader in (function, prepare_function):
+            criteria_reader.add_to_role_policy(criteria_read_statement)
+
+        # Jobs bucket: prepare writes, the other two only read.
+        jobs_bucket.grant_put(prepare_function)
+        jobs_bucket.grant_read(evaluate_criterion_function)
+        jobs_bucket.grant_read(summarize_function)
 
         # -----------------------------------------------------------------
         # IAM — KMS for the dead-letter queue
@@ -429,17 +560,24 @@ class LlmJudgeStack(cdk.Stack):
 
         encryption_key.grant_encrypt_decrypt(function)
 
+        # The workflow functions only need to decrypt their own environment.
+        for workflow_function in (
+            prepare_function,
+            evaluate_criterion_function,
+            summarize_function,
+        ):
+            encryption_key.grant_decrypt(workflow_function)
+
         # -----------------------------------------------------------------
-        # IAM — S3 criteria objects (read-only, objects only, no ListBucket)
+        # Step Functions — Express workflow
         # -----------------------------------------------------------------
 
-        function.add_to_role_policy(
-            iam.PolicyStatement(
-                sid="S3GetCriteriaObject",
-                effect=iam.Effect.ALLOW,
-                actions=["s3:GetObject"],
-                resources=[criteria_bucket.arn_for_objects("*")],
-            )
+        state_machine = self._build_state_machine(
+            resource_prefix=resource_prefix,
+            is_production=is_production,
+            prepare_function=prepare_function,
+            evaluate_criterion_function=evaluate_criterion_function,
+            summarize_function=summarize_function,
         )
 
         # -----------------------------------------------------------------
@@ -533,6 +671,22 @@ class LlmJudgeStack(cdk.Stack):
                 ),
                 treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
             ),
+            cloudwatch.Alarm(
+                self,
+                "WorkflowFailuresAlarm",
+                alarm_name=f"{resource_prefix}-workflow-failures",
+                alarm_description=(
+                    "A LLM-as-a-Judge Step Functions execution failed. Check the "
+                    "execution history for the criterion that could not be scored."
+                ),
+                metric=state_machine.metric_failed(period=cdk.Duration.minutes(5)),
+                threshold=1,
+                evaluation_periods=1,
+                comparison_operator=(
+                    cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD
+                ),
+                treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+            ),
         ]
 
         for alarm in alarms:
@@ -583,6 +737,16 @@ class LlmJudgeStack(cdk.Stack):
                 title="Dead-letter queue depth",
                 left=[
                     dead_letter_queue.metric_approximate_number_of_messages_visible()
+                ],
+                width=12,
+            ),
+            cloudwatch.GraphWidget(
+                title="Workflow executions",
+                left=[
+                    state_machine.metric_started(),
+                    state_machine.metric_succeeded(),
+                    state_machine.metric_failed(),
+                    state_machine.metric_throttled(),
                 ],
                 width=12,
             ),
@@ -638,46 +802,93 @@ class LlmJudgeStack(cdk.Stack):
             description="SNS topic that receives CloudWatch alarm notifications.",
         )
 
+        cdk.CfnOutput(
+            self,
+            "StateMachineArn",
+            value=state_machine.state_machine_arn,
+            description=(
+                "Express state machine for the fan-out evaluation workflow. "
+                "Invoke with: aws stepfunctions start-sync-execution."
+            ),
+            export_name=f"{resource_prefix}-workflow-arn",
+        )
+
+        cdk.CfnOutput(
+            self,
+            "JobsBucketName",
+            value=jobs_bucket.bucket_name,
+            description=(
+                "Bucket staging evaluation payloads for the workflow. Objects "
+                f"expire after {_JOB_RETENTION_DAYS} days."
+            ),
+        )
+
         # -----------------------------------------------------------------
         # cdk-nag suppressions
         # -----------------------------------------------------------------
         # Every suppression below is a deliberate, justified exception. Anything
         # not listed here must be fixed rather than suppressed.
 
-        NagSuppressions.add_resource_suppressions(
+        for lambda_construct in (
             function,
+            prepare_function,
+            evaluate_criterion_function,
+            summarize_function,
+        ):
+            NagSuppressions.add_resource_suppressions(
+                lambda_construct,
+                [
+                    {
+                        "id": "AwsSolutions-IAM4",
+                        "reason": (
+                            "AWSLambdaBasicExecutionRole is the AWS-provided "
+                            "policy for CloudWatch Logs access and is the "
+                            "documented way to grant it. Every other permission "
+                            "on this role is customer-managed and "
+                            "resource-scoped."
+                        ),
+                    },
+                    {
+                        "id": "AwsSolutions-L1",
+                        "reason": (
+                            "Pinned to Python 3.13 rather than the newest "
+                            "runtime the CDK knows about. The runtime version "
+                            "is a deliberate deployment decision that must be "
+                            "validated against the bundled dependency set "
+                            "(anthropic, openai, boto3, aws-lambda-powertools) "
+                            "before it moves. Revisit this pin when those have "
+                            "been exercised on a newer runtime."
+                        ),
+                    },
+                    {
+                        "id": "AwsSolutions-IAM5",
+                        "reason": (
+                            "The remaining wildcards are object-level and are "
+                            "the narrowest form available: s3:GetObject on "
+                            "<bucket>/* (object keys are supplied at runtime by "
+                            "the caller) and the X-Ray PutTraceSegments / "
+                            "PutTelemetryRecords actions, which AWS defines as "
+                            "resource-independent. Bedrock and Secrets Manager "
+                            "access name specific ARNs."
+                        ),
+                    },
+                ],
+                apply_to_children=True,
+            )
+
+        NagSuppressions.add_resource_suppressions(
+            state_machine,
             [
-                {
-                    "id": "AwsSolutions-IAM4",
-                    "reason": (
-                        "AWSLambdaBasicExecutionRole is the AWS-provided policy "
-                        "for CloudWatch Logs access and is the documented way to "
-                        "grant it. Every other permission on this role is "
-                        "customer-managed and resource-scoped."
-                    ),
-                },
-                {
-                    "id": "AwsSolutions-L1",
-                    "reason": (
-                        "Pinned to Python 3.13 rather than the newest runtime "
-                        "the CDK knows about. The runtime version is a "
-                        "deliberate deployment decision that must be validated "
-                        "against the bundled dependency set (anthropic, openai, "
-                        "boto3, aws-lambda-powertools) before it moves. Revisit "
-                        "this pin when those have been exercised on a newer "
-                        "runtime."
-                    ),
-                },
                 {
                     "id": "AwsSolutions-IAM5",
                     "reason": (
-                        "Two object-level wildcards remain and both are the "
-                        "narrowest form available: s3:GetObject on "
-                        "<criteria-bucket>/* (object keys are supplied at "
-                        "runtime by the caller) and the X-Ray PutTraceSegments / "
-                        "PutTelemetryRecords actions, which AWS defines as "
-                        "resource-independent. Bedrock and Secrets Manager "
-                        "access name specific ARNs."
+                        "The execution role's wildcards are generated by the CDK "
+                        "and have no narrower form: lambda:InvokeFunction is "
+                        "granted on <function-arn>:* to cover published "
+                        "versions and aliases of the three named workflow "
+                        "functions, and the X-Ray and CloudWatch Logs delivery "
+                        "actions required for tracing and vended logs are "
+                        "defined by AWS as resource-independent."
                     ),
                 },
             ],
@@ -768,6 +979,137 @@ class LlmJudgeStack(cdk.Stack):
         self.encryption_key = encryption_key
         self.dead_letter_queue = dead_letter_queue
         self.alarm_topic = alarm_topic
+
+    # ------------------------------------------------------------------
+    # Step Functions
+    # ------------------------------------------------------------------
+
+    def _build_state_machine(
+        self,
+        *,
+        resource_prefix: str,
+        is_production: bool,
+        prepare_function: lambda_.IFunction,
+        evaluate_criterion_function: lambda_.IFunction,
+        summarize_function: lambda_.IFunction,
+    ) -> sfn.StateMachine:
+        """Build the Express workflow that fans criteria out across Lambdas.
+
+        Shape::
+
+            Prepare -> Map(MaxConcurrency)[EvaluateCriterion] -> Summarize
+
+        Express (rather than Standard) keeps the request/response contract: the
+        caller uses ``StartSyncExecution`` and gets the evaluation back, matching
+        how the direct-invoke Lambda behaves today. The 5-minute Express ceiling
+        is the binding constraint on how many criteria one execution can carry.
+
+        Args:
+            resource_prefix: Name prefix shared by this stack's resources.
+            is_production:   Selects log retention and removal policy.
+            prepare_function: Validates and stages the request.
+            evaluate_criterion_function: Scores one criterion.
+            summarize_function: Aggregates results into the final response.
+
+        Returns:
+            The configured :class:`~aws_cdk.aws_stepfunctions.StateMachine`.
+        """
+        prepare = tasks.LambdaInvoke(
+            self,
+            "Prepare",
+            lambda_function=prepare_function,
+            # Unwrap the Lambda envelope so downstream states see the handler's
+            # return value directly.
+            payload_response_only=True,
+        )
+
+        evaluate_criterion = tasks.LambdaInvoke(
+            self,
+            "EvaluateCriterion",
+            lambda_function=evaluate_criterion_function,
+            payload_response_only=True,
+        )
+
+        evaluate_map = sfn.Map(
+            self,
+            "EvaluateCriteria",
+            items_path=sfn.JsonPath.string_at("$.items"),
+            # Hard cap on concurrent Bedrock calls, declared in the workflow
+            # rather than left to whatever the caller passes at runtime.
+            max_concurrency=_MAX_PARALLEL_CRITERIA,
+            result_path="$.results",
+        )
+        evaluate_map.item_processor(evaluate_criterion)
+
+        # Retry the whole Map branch rather than individual criteria inside the
+        # Lambda: backoff then runs between invocations, on the service's clock
+        # instead of billed execution time. FULL jitter spreads retries so that
+        # a throttled batch does not resynchronise and throttle again.
+        evaluate_map.add_retry(
+            errors=_RETRYABLE_ERRORS,
+            interval=cdk.Duration.seconds(2),
+            max_attempts=4,
+            backoff_rate=2,
+            jitter_strategy=sfn.JitterType.FULL,
+        )
+
+        summarize = tasks.LambdaInvoke(
+            self,
+            "Summarize",
+            lambda_function=summarize_function,
+            payload=sfn.TaskInput.from_object(
+                {
+                    "job_uri": sfn.JsonPath.string_at("$.job_uri"),
+                    "results": sfn.JsonPath.object_at("$.results"),
+                }
+            ),
+            payload_response_only=True,
+        )
+        summarize.add_retry(
+            errors=_RETRYABLE_ERRORS,
+            interval=cdk.Duration.seconds(2),
+            max_attempts=4,
+            backoff_rate=2,
+            jitter_strategy=sfn.JitterType.FULL,
+        )
+
+        workflow_log_group = logs.LogGroup(
+            self,
+            "WorkflowLogGroup",
+            log_group_name=f"/aws/vendedlogs/states/{resource_prefix}",
+            retention=(
+                logs.RetentionDays.THREE_MONTHS
+                if is_production
+                else logs.RetentionDays.ONE_MONTH
+            ),
+            removal_policy=(
+                cdk.RemovalPolicy.RETAIN if is_production else cdk.RemovalPolicy.DESTROY
+            ),
+        )
+
+        return sfn.StateMachine(
+            self,
+            "EvaluationWorkflow",
+            state_machine_name=f"{resource_prefix}-workflow",
+            state_machine_type=sfn.StateMachineType.EXPRESS,
+            definition_body=sfn.DefinitionBody.from_chainable(
+                prepare.next(evaluate_map.next(summarize))
+            ),
+            timeout=cdk.Duration.seconds(_STATE_MACHINE_TIMEOUT_SEC),
+            tracing_enabled=True,
+            logs=sfn.LogOptions(
+                destination=workflow_log_group,
+                level=sfn.LogLevel.ALL,
+                # The state carries the judge's per-criterion reasoning, which
+                # quotes the submitted material. Logging execution data would
+                # copy that into CloudWatch Logs; the state machine's structure
+                # is observable without it.
+                include_execution_data=False,
+            ),
+            removal_policy=(
+                cdk.RemovalPolicy.RETAIN if is_production else cdk.RemovalPolicy.DESTROY
+            ),
+        )
 
     # ------------------------------------------------------------------
     # IAM helpers

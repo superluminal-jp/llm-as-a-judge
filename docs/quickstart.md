@@ -29,32 +29,40 @@ pytest -q
    S3 上のクライテリアを読ませる場合は **`criteria_bucket_arn`** にバケット ARN（例: `arn:aws:s3:::my-bucket`）を入れる。  
    チーム用の上書きだけローカルに置きたい場合は [`config/parameters.local.json`](../config/README.md)（[`cdk/app.py`](../cdk/app.py) が `parameters.json` とマージ）。
 
-シークレット（Anthropic / OpenAI の API キー）は **JSON には書かない**。デプロイ後に Lambda の環境変数で設定する（下記）。
+シークレット（Anthropic / OpenAI の API キー）は **JSON には書かない**。デプロイ後に Secrets Manager へ投入する（下記）。アカウント ID を含む値も `parameters.local.json` に置く。
 
 ---
 
 ## 3. デプロイ
 
 ```bash
-./scripts/deploy.sh
+# 初回のみ（アカウント・リージョン単位で一度きり）
+./scripts/deploy.sh --env dev --bootstrap
+
+# 以降
+./scripts/deploy.sh --env dev
 # またはリージョン指定
-./scripts/deploy.sh --region ap-northeast-1
+./scripts/deploy.sh --env dev --region ap-northeast-1
 ```
 
-初回は CDK の bootstrap が走る場合がある。完了後、スタック出力に **Lambda ARN** が表示される。
+スタック名は `LlmJudgeStack-<env>`。完了後、Lambda ARN・関数名・criteria バケット名・シークレット名などが出力される。
 
 ---
 
 ## 4. API キー（Anthropic / OpenAI を使う場合）
 
-Bedrock のみなら Lambda 実行ロールの IAM で足りることが多い。Anthropic / OpenAI をデフォルトまたはイベントで使う場合は、例として:
+Bedrock のみなら Lambda 実行ロールの IAM 認証で足りるので、この手順は不要。
+
+Anthropic / OpenAI を使う場合は、スタックが作成した Secrets Manager シークレットに値を入れる。**Lambda の環境変数には入れない**:
 
 ```bash
-aws lambda update-function-configuration \
-  --function-name <LlmJudgeStack が出力した関数名> \
+aws secretsmanager put-secret-value \
+  --secret-id llm-judge-dev/api-keys \
   --region <リージョン> \
-  --environment "Variables={ANTHROPIC_API_KEY=sk-ant-...,DEFAULT_PROVIDER=anthropic}"
+  --secret-string '{"ANTHROPIC_API_KEY":"sk-ant-...","OPENAI_API_KEY":""}'
 ```
+
+キーは呼び出し時に遅延取得され、コンテナ内に既定 300 秒キャッシュされる。
 
 ---
 
@@ -73,7 +81,17 @@ aws lambda invoke \
 
 `result.json` は [`.gitignore`](../.gitignore) 対象。成功時は `criterion_scores`・`criterion_reasoning`・`reasoning` などが返る。
 
-デプロイ後に **複数パターンをまとめて試す**場合は、リポジトリルートで `python3 scripts/lambda_pattern_tests.py`（`LlmJudgeStack` の出力関数名を自動参照、`judge_model` は `amazon.nova-lite-v1:0` 固定）。
+クライテリア数が多い場合は **Step Functions ワークフロー**でも同じイベントを実行できる（同じレスポンスが返る）:
+
+```bash
+aws stepfunctions start-sync-execution \
+  --state-machine-arn <StateMachineArn 出力値> \
+  --region <リージョン> \
+  --input '{"prompt":"1+1は？","response":"2です。","provider":"bedrock"}' \
+  --query output --output text
+```
+
+デプロイ後に **複数パターンをまとめて試す**場合は、リポジトリルートで `python3 scripts/lambda_pattern_tests.py`（スタック出力を自動参照、`judge_model` は `amazon.nova-lite-v1:0` 固定）。`TARGET=workflow` を付けると同じケースをワークフロー経路で実行する。
 
 ---
 

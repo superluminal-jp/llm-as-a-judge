@@ -57,6 +57,40 @@ def template() -> Template:
     return _synth()
 
 
+def _role_statements(template: Template, role_prefix: str) -> list[dict]:
+    """Return IAM statements attached to the role whose logical ID starts with
+    ``role_prefix``."""
+    rendered = template.to_json()["Resources"]
+    role_ids = {
+        logical_id
+        for logical_id, resource in rendered.items()
+        if resource["Type"] == "AWS::IAM::Role" and logical_id.startswith(role_prefix)
+    }
+    assert role_ids, f"no role matching {role_prefix!r}"
+
+    statements: list[dict] = []
+    for resource in rendered.values():
+        if resource["Type"] != "AWS::IAM::Policy":
+            continue
+        refs = {
+            role.get("Ref")
+            for role in resource["Properties"].get("Roles", [])
+            if isinstance(role, dict)
+        }
+        if refs & role_ids:
+            statements.extend(resource["Properties"]["PolicyDocument"]["Statement"])
+    return statements
+
+
+def _actions(statements: list[dict]) -> set[str]:
+    """Flatten the Action entries of the given statements into a set."""
+    actions: set[str] = set()
+    for statement in statements:
+        raw = statement["Action"]
+        actions.update(str(a) for a in ([raw] if isinstance(raw, str) else raw))
+    return actions
+
+
 def _judge_role_statements(template: Template) -> list[dict]:
     """Return the IAM statements attached to the judge function's execution role.
 
@@ -298,7 +332,8 @@ class TestObservability:
         )
 
     def test_alarms_exist(self, template: Template) -> None:
-        template.resource_count_is("AWS::CloudWatch::Alarm", 4)
+        # errors, throttles, duration p99, DLQ depth, workflow failures
+        template.resource_count_is("AWS::CloudWatch::Alarm", 5)
 
     def test_alarms_notify_sns(self, template: Template) -> None:
         alarms = template.find_resources("AWS::CloudWatch::Alarm")
@@ -437,9 +472,121 @@ class TestSupportingResources:
         )
 
     def test_existing_bucket_arn_is_imported_not_created(self) -> None:
+        """Supplying an ARN must not create a second criteria bucket.
+
+        The jobs bucket is always stack-owned — it stages claim-check payloads
+        and is unrelated to where criteria files live — so this asserts on the
+        criteria bucket specifically rather than on the bucket count.
+        """
         imported = _synth(
             criteria_bucket_arn="arn:aws:s3:::existing-criteria-bucket"
         )
-        buckets = imported.find_resources("AWS::S3::Bucket")
-        assert buckets == {}, "an existing bucket ARN must not create a new bucket"
+        logical_ids = set(imported.find_resources("AWS::S3::Bucket"))
+        assert not [
+            logical_id
+            for logical_id in logical_ids
+            if logical_id.startswith(("CriteriaBucket", "CriteriaAccessLogsBucket"))
+        ], "an existing bucket ARN must not create a criteria bucket"
         assert "existing-criteria-bucket" in str(imported.to_json())
+
+    def test_jobs_bucket_expires_staged_payloads(self, template: Template) -> None:
+        """Staged payloads contain submitted material; they must not persist."""
+        buckets = template.find_resources("AWS::S3::Bucket")
+        jobs = [
+            resource
+            for logical_id, resource in buckets.items()
+            if logical_id.startswith("JobsBucket")
+        ]
+        assert jobs, "jobs bucket not found"
+        rules = jobs[0]["Properties"]["LifecycleConfiguration"]["Rules"]
+        assert any(rule.get("ExpirationInDays") for rule in rules), (
+            "jobs bucket has no expiration rule"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Step Functions workflow
+# ---------------------------------------------------------------------------
+
+
+class TestEvaluationWorkflow:
+    """The fan-out moved from an in-Lambda thread pool to a Map state."""
+
+    @staticmethod
+    def _definition(template: Template) -> dict:
+        machines = template.find_resources("AWS::StepFunctions::StateMachine")
+        assert machines, "no state machine synthesised"
+        return list(machines.values())[0]["Properties"]
+
+    def test_express_workflow_for_synchronous_invocation(
+        self, template: Template
+    ) -> None:
+        """Express supports StartSyncExecution, preserving the request/response
+        contract the direct-invoke Lambda already offers."""
+        assert self._definition(template)["StateMachineType"] == "EXPRESS"
+
+    def test_tracing_enabled(self, template: Template) -> None:
+        props = self._definition(template)
+        assert props["TracingConfiguration"]["Enabled"] is True
+
+    def test_execution_data_not_logged(self, template: Template) -> None:
+        """State carries judge reasoning quoting the submitted material."""
+        props = self._definition(template)
+        logging = props["LoggingConfiguration"]
+        assert logging["IncludeExecutionData"] is False
+        assert logging["Level"] == "ALL"
+
+    def test_map_concurrency_is_capped(self, template: Template) -> None:
+        definition = str(self._definition(template)["DefinitionString"])
+        assert '\\"MaxConcurrency\\":5' in definition.replace(" ", "") or (
+            '"MaxConcurrency":5' in definition.replace(" ", "")
+        ), "Map state does not cap concurrency"
+
+    def test_retries_use_backoff_and_full_jitter(self, template: Template) -> None:
+        """Retrying in the state machine keeps backoff off billed Lambda time."""
+        definition = str(self._definition(template)["DefinitionString"])
+        assert "ThrottlingException" in definition
+        assert "ModelTimeoutException" in definition
+        assert "BackoffRate" in definition
+        assert "FULL" in definition
+
+    def test_three_workflow_functions_plus_direct_invoke(
+        self, template: Template
+    ) -> None:
+        functions = template.find_resources("AWS::Lambda::Function")
+        ours = [
+            logical_id
+            for logical_id in functions
+            if logical_id.startswith(
+                ("LlmJudgeFunction", "PrepareFunction", "EvaluateCriterion", "Summarize")
+            )
+        ]
+        assert len(ours) == 4, f"expected 4 service functions, found {sorted(ours)}"
+
+    def test_prepare_function_cannot_invoke_bedrock(
+        self, template: Template
+    ) -> None:
+        """Least privilege per step: only model callers get Bedrock."""
+        statements = _role_statements(template, "PrepareFunctionServiceRole")
+        actions = _actions(statements)
+        assert not any(a.startswith("bedrock:") for a in actions), (
+            f"prepare step should not reach Bedrock, got {sorted(actions)}"
+        )
+
+    def test_criterion_worker_cannot_write_to_jobs_bucket(
+        self, template: Template
+    ) -> None:
+        statements = _role_statements(template, "EvaluateCriterionFunctionServiceRole")
+        actions = _actions(statements)
+        assert any(a.startswith("bedrock:") for a in actions), "worker needs Bedrock"
+        assert not any(a.startswith("s3:Put") for a in actions), (
+            f"criterion worker should be read-only on S3, got {sorted(actions)}"
+        )
+
+    def test_criterion_worker_cannot_read_criteria_bucket(
+        self, template: Template
+    ) -> None:
+        """Criteria are resolved once, in the prepare step."""
+        statements = _role_statements(template, "EvaluateCriterionFunctionServiceRole")
+        sids = {s.get("Sid") for s in statements}
+        assert "S3GetCriteriaObject" not in sids

@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
-"""Run multiple Lambda invocation patterns against a deployed LlmJudgeStack.
+"""Run multiple invocation patterns against a deployed LlmJudgeStack.
+
+Exercises both entry points with the same cases: the single-Lambda path and the
+Step Functions Express workflow. Both must accept identical events and return
+identical response shapes, so running with ``TARGET=workflow`` after
+``TARGET=lambda`` is the end-to-end check that the two stay in step.
 
 Uses Bedrock with ``amazon.nova-lite-v1:0`` in each payload (on-demand model).
 
 Environment:
-    AWS_REGION          Override region (default: config/parameters.json ``aws_region``).
-    LAMBDA_FUNCTION_NAME  Skip CloudFormation lookup when set.
+    AWS_REGION           Override region (default: config/parameters.json ``aws_region``).
+    ENVIRONMENT          Environment suffix used to build the stack name
+                         (default: config/parameters.json ``environment``).
+    STACK_NAME           Skip the ``LlmJudgeStack-<environment>`` convention.
+    TARGET               ``lambda`` (default) or ``workflow``.
+    LAMBDA_FUNCTION_NAME Skip the CloudFormation output lookup.
+    STATE_MACHINE_ARN    Skip the CloudFormation output lookup.
 
 Usage (from repo root)::
 
     python3 scripts/lambda_pattern_tests.py
+    TARGET=workflow python3 scripts/lambda_pattern_tests.py
 """
 
 from __future__ import annotations
@@ -39,25 +50,23 @@ def _bucket_from_arn(arn: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _resolve_function_name(region: str) -> str:
-    if name := os.environ.get("LAMBDA_FUNCTION_NAME", "").strip():
-        return name
+def _stack_outputs(region: str, environment: str) -> dict[str, str]:
+    """Return the deployed stack's outputs keyed by OutputKey."""
     import boto3
 
     cf = boto3.client("cloudformation", region_name=region)
-    stacks = cf.describe_stacks(StackName="LlmJudgeStack")
-    outs = stacks["Stacks"][0].get("Outputs") or []
-    for o in outs:
-        if o.get("OutputKey") == "LambdaFunctionName":
-            return str(o["OutputValue"])
-    raise RuntimeError("LambdaFunctionName output missing on LlmJudgeStack")
+    stack_name = os.environ.get("STACK_NAME", f"LlmJudgeStack-{environment}")
+    stacks = cf.describe_stacks(StackName=stack_name)
+    outputs = stacks["Stacks"][0].get("Outputs") or []
+    return {str(o["OutputKey"]): str(o["OutputValue"]) for o in outputs}
 
 
-def _invoke(
+def _invoke_lambda(
     client: Any,
     name: str,
     payload: dict[str, Any],
 ) -> tuple[dict[str, Any], str | None]:
+    """Invoke the single-Lambda path and return ``(body, function_error)``."""
     raw = client.invoke(
         FunctionName=name,
         InvocationType="RequestResponse",
@@ -68,16 +77,77 @@ def _invoke(
     return body, err
 
 
+def _invoke_workflow(
+    client: Any,
+    state_machine_arn: str,
+    payload: dict[str, Any],
+) -> tuple[dict[str, Any], str | None]:
+    """Run the Express workflow synchronously.
+
+    Normalises the Step Functions result into the same ``(body, error)`` shape
+    ``_invoke_lambda`` returns, so both entry points run through the identical
+    set of assertions below.
+    """
+    raw = client.start_sync_execution(
+        stateMachineArn=state_machine_arn,
+        input=json.dumps(payload, ensure_ascii=False),
+    )
+    if raw.get("status") != "SUCCEEDED":
+        return (
+            {
+                "errorType": str(raw.get("error", "ExecutionFailed")),
+                "errorMessage": str(raw.get("cause", ""))[:2000],
+            },
+            str(raw.get("error", "ExecutionFailed")),
+        )
+    return json.loads(raw["output"]), None
+
+
 def main() -> int:
     params = _load_parameters()
     region = os.environ.get("AWS_REGION", params.get("aws_region", "ap-northeast-1"))
-    bucket_arn = str(params.get("criteria_bucket_arn", "") or "")
-    bucket = _bucket_from_arn(bucket_arn)
+    environment = os.environ.get(
+        "ENVIRONMENT", str(params.get("environment", "dev") or "dev")
+    )
+    target = os.environ.get("TARGET", "lambda").strip().lower()
+    if target not in ("lambda", "workflow"):
+        print(f"TARGET must be 'lambda' or 'workflow', got {target!r}", file=sys.stderr)
+        return 2
 
     import boto3
 
-    lambda_client = boto3.client("lambda", region_name=region)
-    fn = _resolve_function_name(region)
+    outputs = _stack_outputs(region, environment)
+
+    # The criteria bucket is now created by the stack, so prefer its output over
+    # config/parameters.json (which no longer carries a real ARN).
+    bucket = outputs.get("CriteriaBucketName") or _bucket_from_arn(
+        str(params.get("criteria_bucket_arn", "") or "")
+    )
+
+    if target == "workflow":
+        state_machine_arn = os.environ.get("STATE_MACHINE_ARN") or outputs.get(
+            "StateMachineArn", ""
+        )
+        if not state_machine_arn:
+            print("StateMachineArn output missing on the stack", file=sys.stderr)
+            return 2
+        sfn_client = boto3.client("stepfunctions", region_name=region)
+        target_label = state_machine_arn.rsplit(":", 1)[-1]
+
+        def run(payload: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+            return _invoke_workflow(sfn_client, state_machine_arn, payload)
+    else:
+        fn = os.environ.get("LAMBDA_FUNCTION_NAME", "").strip() or outputs.get(
+            "LambdaFunctionName", ""
+        )
+        if not fn:
+            print("LambdaFunctionName output missing on the stack", file=sys.stderr)
+            return 2
+        lambda_client = boto3.client("lambda", region_name=region)
+        target_label = fn
+
+        def run(payload: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+            return _invoke_lambda(lambda_client, fn, payload)
 
     base_paired = {
         "prompt": "要約してください: 水はH2Oです。",
@@ -237,10 +307,10 @@ def main() -> int:
 
     passed = 0
     failed = 0
-    print(f"Region={region} Function={fn}\n")
+    print(f"Region={region} Target={target} ({target_label})\n")
 
     for case_id, payload, expect_ok, note in cases:
-        body, fn_err = _invoke(lambda_client, fn, payload)
+        body, fn_err = run(payload)
         ok = fn_err is None and "errorMessage" not in body
         if expect_ok:
             success = ok
