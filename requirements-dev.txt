@@ -1,3 +1,5 @@
 pytest>=8.3.0
 pytest-cov>=6.1.0
-moto[s3]>=5.1.0
+moto[s3,dynamodb]>=5.1.0
+# Validates the workflow response against contracts/lambda-response.json.
+jsonschema>=4.20.0

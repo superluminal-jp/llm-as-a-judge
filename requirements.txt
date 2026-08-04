@@ -1,4 +1,7 @@
 anthropic>=0.49.0
 openai>=1.68.0
 boto3>=1.37.0
-aws-lambda-powertools>=3.6.0
+# [tracer] pulls aws-xray-sdk, required by the Powertools Tracer decorators.
+# The parameters utility (used by src.config.get_api_key) needs no extra — it
+# relies on boto3, which is already a direct dependency above.
+aws-lambda-powertools[tracer]>=3.6.0

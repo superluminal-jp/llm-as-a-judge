@@ -23,7 +23,7 @@ from src.criteria import (
     load_from_dict,
     load_from_s3,
 )
-from src.handler import ConfigurationError, CriteriaLoadError, ValidationError
+from src.errors import ConfigurationError, CriteriaLoadError, ValidationError
 
 
 # ---------------------------------------------------------------------------

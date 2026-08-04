@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from src.handler import ConfigurationError, ProviderError
+from src.errors import ConfigurationError, ProviderError
 
 
 # ---------------------------------------------------------------------------
@@ -32,6 +32,7 @@ def _make_config(
     bedrock_model: str = "amazon.nova-premier-v1:0",
     request_timeout: int = 30,
     default_provider: str = "anthropic",
+    api_keys_secret_name: str = "",
 ):
     from src.config import Config
 
@@ -44,6 +45,7 @@ def _make_config(
         bedrock_model=bedrock_model,
         request_timeout=request_timeout,
         log_level="INFO",
+        api_keys_secret_name=api_keys_secret_name,
     )
 
 
@@ -314,3 +316,112 @@ class TestGetProvider:
             p2 = get_provider("anthropic", config)
 
         assert p1 is p2
+
+
+# ---------------------------------------------------------------------------
+# Bedrock client configuration and error mapping
+# ---------------------------------------------------------------------------
+
+
+class TestBedrockClientConfiguration:
+    """The client must be built with an explicit botocore Config.
+
+    With botocore defaults, REQUEST_TIMEOUT had no effect on Bedrock at all and
+    the connection pool (10) throttled the 10-criterion criteria file at the
+    HTTP layer.
+    """
+
+    @staticmethod
+    def _captured_config(**config_overrides):
+        from src.providers.bedrock import BedrockProvider
+
+        config = _make_config(**config_overrides)
+        with patch("src.providers.bedrock.boto3.client") as mock_boto3:
+            BedrockProvider(config)
+        assert mock_boto3.call_args is not None
+        return mock_boto3.call_args.kwargs["config"]
+
+    def test_read_timeout_comes_from_request_timeout(self):
+        client_config = self._captured_config(request_timeout=45)
+        assert client_config.read_timeout == 45
+
+    def test_connect_timeout_is_capped(self):
+        """A slow handshake is a network fault, not a slow model."""
+        client_config = self._captured_config(request_timeout=120)
+        assert client_config.connect_timeout == 10
+
+    def test_connect_timeout_never_exceeds_read_timeout(self):
+        client_config = self._captured_config(request_timeout=5)
+        assert client_config.connect_timeout == 5
+
+    def test_adaptive_retry_mode(self):
+        client_config = self._captured_config()
+        assert client_config.retries["mode"] == "adaptive"
+        assert client_config.retries["max_attempts"] == 5
+
+    def test_connection_pool_is_set_explicitly(self):
+        """Left to botocore this is 10 by accident rather than by decision."""
+        client_config = self._captured_config()
+        assert client_config.max_pool_connections >= 10
+
+
+class TestBedrockErrorMapping:
+    @staticmethod
+    def _provider_raising(code: str, message: str = "boom"):
+        import botocore.exceptions
+
+        from src.providers.bedrock import BedrockProvider
+
+        client = MagicMock()
+        client.converse.side_effect = botocore.exceptions.ClientError(
+            error_response={"Error": {"Code": code, "Message": message}},
+            operation_name="Converse",
+        )
+        with patch("src.providers.bedrock.boto3.client", return_value=client):
+            return BedrockProvider(_make_config()), client
+
+    def test_access_denied_is_not_retried(self):
+        """AccessDenied is a missing grant, never transient.
+
+        The previous implementation retried it three times with backoff,
+        burning billed Lambda time before failing anyway.
+        """
+        provider, client = self._provider_raising("AccessDeniedException")
+
+        with pytest.raises(ProviderError, match="inference-profile|InvokeModel"):
+            provider.complete(MESSAGES, MODEL, TIMEOUT)
+
+        assert client.converse.call_count == 1
+
+    def test_throttling_message_is_actionable(self):
+        provider, client = self._provider_raising("ThrottlingException")
+
+        with pytest.raises(ProviderError, match="MaxConcurrency|quota"):
+            provider.complete(MESSAGES, MODEL, TIMEOUT)
+
+        # botocore owns retries now; this layer calls converse exactly once.
+        assert client.converse.call_count == 1
+
+    def test_read_timeout_maps_to_provider_error(self):
+        import botocore.exceptions
+
+        from src.providers.bedrock import BedrockProvider
+
+        client = MagicMock()
+        client.converse.side_effect = botocore.exceptions.ReadTimeoutError(
+            endpoint_url="https://bedrock-runtime.ap-northeast-1.amazonaws.com"
+        )
+        with patch("src.providers.bedrock.boto3.client", return_value=client):
+            provider = BedrockProvider(_make_config())
+            with pytest.raises(ProviderError, match="timed out"):
+                provider.complete(MESSAGES, MODEL, TIMEOUT)
+
+    def test_malformed_response_maps_to_provider_error(self):
+        from src.providers.bedrock import BedrockProvider
+
+        client = MagicMock()
+        client.converse.return_value = {"output": {"message": {"content": []}}}
+        with patch("src.providers.bedrock.boto3.client", return_value=client):
+            provider = BedrockProvider(_make_config())
+            with pytest.raises(ProviderError, match="text content block"):
+                provider.complete(MESSAGES, MODEL, TIMEOUT)

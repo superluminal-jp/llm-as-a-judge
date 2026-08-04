@@ -1,0 +1,633 @@
+"""Infrastructure assertions for :class:`cdk.stack.LlmJudgeStack`.
+
+These tests synthesise the stack in-process with ``aws_cdk.assertions`` and
+assert the properties that matter operationally: least-privilege IAM, bounded
+log retention, a dead-letter queue, tracing, and concurrency limits.
+
+Docker is not required: the ``aws:cdk:bundling-stacks`` context key is set to an
+empty list, which tells the CDK to skip asset bundling. That key cannot be
+passed on the ``cdk`` CLI (the CLI rejects user context prefixed with ``aws:``)
+but is accepted when supplied programmatically to :class:`~aws_cdk.App`.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+
+import aws_cdk as cdk
+import pytest
+from aws_cdk.assertions import Match, Template
+
+# cdk/app.py imports `stack` as a top-level module, so cdk/ must be importable.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "cdk"))
+
+from stack import LlmJudgeStack  # noqa: E402
+
+
+DEFAULT_MODELS = ["jp.anthropic.claude-sonnet-4-6", "amazon.nova-lite-v1:0"]
+DEFAULT_PROFILE_REGIONS = ["ap-northeast-1", "ap-northeast-3"]
+
+
+def _synth(**overrides) -> Template:
+    """Synthesise LlmJudgeStack and return its assertions Template."""
+    app = cdk.App(context={"aws:cdk:bundling-stacks": []})
+    kwargs = {
+        "environment_name": "dev",
+        "default_provider": "bedrock",
+        "bedrock_model": "jp.anthropic.claude-sonnet-4-6",
+        "bedrock_allowed_models": list(DEFAULT_MODELS),
+        "bedrock_inference_profile_regions": list(DEFAULT_PROFILE_REGIONS),
+        "criteria_bucket_arn": "",
+    }
+    kwargs.update(overrides)
+    stack = LlmJudgeStack(
+        app,
+        "LlmJudgeStack-test",
+        env=cdk.Environment(account="111122223333", region="ap-northeast-1"),
+        **kwargs,
+    )
+    return Template.from_stack(stack)
+
+
+@pytest.fixture(scope="module")
+def template() -> Template:
+    """Synthesised template for the default (stack-managed bucket) configuration."""
+    return _synth()
+
+
+def _role_statements(template: Template, role_prefix: str) -> list[dict]:
+    """Return IAM statements attached to the role whose logical ID starts with
+    ``role_prefix``."""
+    rendered = template.to_json()["Resources"]
+    role_ids = {
+        logical_id
+        for logical_id, resource in rendered.items()
+        if resource["Type"] == "AWS::IAM::Role" and logical_id.startswith(role_prefix)
+    }
+    assert role_ids, f"no role matching {role_prefix!r}"
+
+    statements: list[dict] = []
+    for resource in rendered.values():
+        if resource["Type"] != "AWS::IAM::Policy":
+            continue
+        refs = {
+            role.get("Ref")
+            for role in resource["Properties"].get("Roles", [])
+            if isinstance(role, dict)
+        }
+        if refs & role_ids:
+            statements.extend(resource["Properties"]["PolicyDocument"]["Statement"])
+    return statements
+
+
+def _timeout_seconds(props: dict) -> int:
+    """Return a state machine's TimeoutSeconds from its definition."""
+    definition = str(props["DefinitionString"]).replace(" ", "")
+    match = re.search(r'"TimeoutSeconds":(\d+)', definition)
+    assert match, "no TimeoutSeconds in the state machine definition"
+    return int(match.group(1))
+
+
+def _actions(statements: list[dict]) -> set[str]:
+    """Flatten the Action entries of the given statements into a set."""
+    actions: set[str] = set()
+    for statement in statements:
+        raw = statement["Action"]
+        actions.update(str(a) for a in ([raw] if isinstance(raw, str) else raw))
+    return actions
+
+
+# ---------------------------------------------------------------------------
+# IAM — least privilege
+# ---------------------------------------------------------------------------
+
+
+class TestBedrockIam:
+    """The Bedrock policy must name specific models, never a wildcard."""
+
+    def test_no_wildcard_foundation_model_resource(self, template: Template) -> None:
+        rendered = template.to_json()
+        assert "foundation-model/*" not in str(rendered), (
+            "Bedrock policy still grants every foundation model; it must be "
+            "scoped to bedrock_allowed_models."
+        )
+
+    def test_grants_inference_profile_arn(self, template: Template) -> None:
+        """Cross-region profile IDs need the inference-profile ARN itself."""
+        rendered = str(template.to_json())
+        assert (
+            "inference-profile/jp.anthropic.claude-sonnet-4-6" in rendered
+        ), "Missing inference-profile ARN for the jp. cross-region profile."
+
+    def test_grants_underlying_model_in_every_routed_region(
+        self, template: Template
+    ) -> None:
+        """Profile invocation also needs the base model in each routed region."""
+        rendered = str(template.to_json())
+        for region in DEFAULT_PROFILE_REGIONS:
+            assert (
+                f"bedrock:{region}::foundation-model/anthropic.claude-sonnet-4-6"
+                in rendered
+            ), f"Missing foundation-model grant in routed region {region}."
+
+    def test_grants_plain_model_id_without_profile_arn(
+        self, template: Template
+    ) -> None:
+        """A non-prefixed model ID resolves to a foundation-model ARN only."""
+        rendered = str(template.to_json())
+        assert "foundation-model/amazon.nova-lite-v1:0" in rendered
+        assert "inference-profile/amazon.nova-lite-v1:0" not in rendered
+
+    def test_invoke_model_action_present(self, template: Template) -> None:
+        template.has_resource_properties(
+            "AWS::IAM::Policy",
+            {
+                "PolicyDocument": {
+                    "Statement": Match.array_with(
+                        [
+                            Match.object_like(
+                                {
+                                    "Sid": "BedrockInvokeConfiguredModels",
+                                    "Action": Match.array_with(
+                                        ["bedrock:InvokeModel"]
+                                    ),
+                                    "Effect": "Allow",
+                                }
+                            )
+                        ]
+                    )
+                }
+            },
+        )
+
+
+class TestS3Iam:
+    """Criteria access is object-level read only."""
+
+    def test_get_object_only(self, template: Template) -> None:
+        template.has_resource_properties(
+            "AWS::IAM::Policy",
+            {
+                "PolicyDocument": {
+                    "Statement": Match.array_with(
+                        [
+                            Match.object_like(
+                                {
+                                    "Sid": "S3GetCriteriaObject",
+                                    "Action": "s3:GetObject",
+                                    "Effect": "Allow",
+                                }
+                            )
+                        ]
+                    )
+                }
+            },
+        )
+
+    def test_criterion_worker_gets_no_bucket_level_access(
+        self, template: Template
+    ) -> None:
+        """The criterion worker reads objects only.
+
+        Scoped to that step's own role: the BucketDeployment custom resource
+        legitimately holds broader access to the same bucket, so a whole-template
+        string search would pass vacuously.
+        """
+        actions = _actions(
+            _role_statements(template, "EvaluateCriterionFunctionServiceRole")
+        )
+        for action in actions:
+            assert not action.startswith(("s3:List", "s3:GetBucket")), (
+                f"criterion worker must not hold bucket-level S3 access: {action}"
+            )
+        # It writes its own result object, but must not be able to delete.
+        assert not [a for a in actions if a.startswith("s3:Delete")], (
+            f"criterion worker must not hold S3 delete access: {sorted(actions)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Lambda configuration
+# ---------------------------------------------------------------------------
+
+
+class TestLambdaConfiguration:
+    def test_timeout_allows_full_criteria_sweep(self, template: Template) -> None:
+        """60s was too short for the 10-criterion file; 300s is the new floor."""
+        template.has_resource_properties(
+            "AWS::Lambda::Function",
+            Match.object_like({"Timeout": 300}),
+        )
+
+    def test_runs_on_arm64(self, template: Template) -> None:
+        template.has_resource_properties(
+            "AWS::Lambda::Function",
+            Match.object_like({"Architectures": ["arm64"]}),
+        )
+
+    def test_tracing_active(self, template: Template) -> None:
+        template.has_resource_properties(
+            "AWS::Lambda::Function",
+            Match.object_like({"TracingConfig": {"Mode": "Active"}}),
+        )
+
+    def test_reserved_concurrency_set(self, template: Template) -> None:
+        template.has_resource_properties(
+            "AWS::Lambda::Function",
+            Match.object_like({"ReservedConcurrentExecutions": 10}),
+        )
+
+    def test_dead_letter_queue_attached(self, template: Template) -> None:
+        template.has_resource_properties(
+            "AWS::Lambda::Function",
+            Match.object_like({"DeadLetterConfig": Match.any_value()}),
+        )
+        template.resource_count_is("AWS::SQS::Queue", 1)
+
+    def test_json_logging_with_levels(self, template: Template) -> None:
+        template.has_resource_properties(
+            "AWS::Lambda::Function",
+            Match.object_like(
+                {
+                    "LoggingConfig": Match.object_like(
+                        {
+                            "LogFormat": "JSON",
+                            "ApplicationLogLevel": "INFO",
+                            "SystemLogLevel": "WARN",
+                        }
+                    )
+                }
+            ),
+        )
+
+    def test_environment_variables_carry_no_api_keys(
+        self, template: Template
+    ) -> None:
+        """API keys must come from Secrets Manager, never the function env."""
+        functions = template.find_resources("AWS::Lambda::Function")
+        for resource in functions.values():
+            env = resource["Properties"].get("Environment", {}).get("Variables", {})
+            assert "ANTHROPIC_API_KEY" not in env
+            assert "OPENAI_API_KEY" not in env
+
+    def test_environment_encrypted_with_cmk(self, template: Template) -> None:
+        template.has_resource_properties(
+            "AWS::Lambda::Function",
+            Match.object_like({"KmsKeyArn": Match.any_value()}),
+        )
+
+    def test_secret_name_passed_to_runtime(self, template: Template) -> None:
+        template.has_resource_properties(
+            "AWS::Lambda::Function",
+            Match.object_like(
+                {
+                    "Environment": {
+                        "Variables": Match.object_like(
+                            {"API_KEYS_SECRET_NAME": Match.any_value()}
+                        )
+                    }
+                }
+            ),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Logs, alarms, and supporting resources
+# ---------------------------------------------------------------------------
+
+
+class TestObservability:
+    def test_log_group_retention_is_bounded(self, template: Template) -> None:
+        """Without an explicit group, Lambda creates one that never expires."""
+        template.has_resource_properties(
+            "AWS::Logs::LogGroup",
+            Match.object_like({"RetentionInDays": 30}),
+        )
+
+    def test_production_uses_longer_retention(self) -> None:
+        prod = _synth(environment_name="prod")
+        prod.has_resource_properties(
+            "AWS::Logs::LogGroup",
+            Match.object_like({"RetentionInDays": 90}),
+        )
+
+    def test_alarms_exist(self, template: Template) -> None:
+        # errors, throttles, duration p99, DLQ depth, plus one failure alarm
+        # per workflow (sync and async)
+        template.resource_count_is("AWS::CloudWatch::Alarm", 6)
+
+    def test_alarms_notify_sns(self, template: Template) -> None:
+        alarms = template.find_resources("AWS::CloudWatch::Alarm")
+        assert alarms, "no alarms synthesised"
+        for resource in alarms.values():
+            assert resource["Properties"].get("AlarmActions"), (
+                "alarm has no SNS action attached"
+            )
+
+    def test_dashboard_created(self, template: Template) -> None:
+        template.resource_count_is("AWS::CloudWatch::Dashboard", 1)
+
+
+class TestCdkNagCompliance:
+    """The AWS Solutions rule pack must report no unsuppressed findings.
+
+    Suppressions live in cdk/stack.py and each carries a written reason; this
+    test fails when a change introduces a finding that nobody has justified.
+    """
+
+    def test_no_unsuppressed_findings(self, tmp_path) -> None:
+        import glob
+
+        from cdk_nag import AwsSolutionsChecks, NagReportFormat
+
+        app = cdk.App(
+            outdir=str(tmp_path), context={"aws:cdk:bundling-stacks": []}
+        )
+        LlmJudgeStack(
+            app,
+            "LlmJudgeStack-dev",
+            env=cdk.Environment(account="111122223333", region="ap-northeast-1"),
+            environment_name="dev",
+            default_provider="bedrock",
+            bedrock_model="jp.anthropic.claude-sonnet-4-6",
+            bedrock_allowed_models=list(DEFAULT_MODELS),
+            bedrock_inference_profile_regions=list(DEFAULT_PROFILE_REGIONS),
+            criteria_bucket_arn="",
+        )
+        cdk.Aspects.of(app).add(
+            AwsSolutionsChecks(
+                verbose=True,
+                reports=True,
+                report_formats=[NagReportFormat.JSON],
+            )
+        )
+        app.synth()
+
+        reports = glob.glob(str(tmp_path / "*NagReport.json"))
+        assert reports, "cdk-nag produced no report"
+
+        with open(reports[0], encoding="utf-8") as handle:
+            lines = json.load(handle)["lines"]
+
+        findings = [
+            f"{line['ruleId']} on {line['resourceId']}"
+            for line in lines
+            if line["compliance"] == "Non-Compliant"
+        ]
+        assert not findings, "unsuppressed cdk-nag findings:\n" + "\n".join(findings)
+
+        # Guard against the opposite failure: a blanket suppression that
+        # silences the whole rule pack.
+        assert any(line["compliance"] == "Compliant" for line in lines)
+
+
+class TestSupportingResources:
+    def test_secret_created_with_cmk(self, template: Template) -> None:
+        template.has_resource_properties(
+            "AWS::SecretsManager::Secret",
+            Match.object_like({"KmsKeyId": Match.any_value()}),
+        )
+
+    def test_kms_key_rotates(self, template: Template) -> None:
+        template.has_resource_properties(
+            "AWS::KMS::Key",
+            Match.object_like({"EnableKeyRotation": True}),
+        )
+
+    def test_dlq_owner_can_encrypt_for_the_queue(self, template: Template) -> None:
+        """kms:Decrypt alone is not enough to write to a CMK-encrypted queue."""
+        granted = _actions(_role_statements(template, "PrepareFunctionServiceRole"))
+        assert any(a.startswith("kms:GenerateDataKey") for a in granted), (
+            "the DLQ-carrying function cannot generate a data key, so DLQ "
+            "delivery would fail silently. Granted KMS actions: "
+            f"{sorted(a for a in granted if 'kms' in a)}"
+        )
+
+    def test_cloudwatch_can_publish_to_encrypted_alarm_topic(
+        self, template: Template
+    ) -> None:
+        """Alarms on a CMK-encrypted topic need an explicit key grant."""
+        keys = template.find_resources("AWS::KMS::Key")
+        statements = [
+            statement
+            for key in keys.values()
+            for statement in key["Properties"]["KeyPolicy"]["Statement"]
+        ]
+        matching = [
+            s
+            for s in statements
+            if s.get("Principal", {}).get("Service") == "cloudwatch.amazonaws.com"
+        ]
+        assert matching, (
+            "CloudWatch has no key access; alarm notifications to the encrypted "
+            "SNS topic would be dropped."
+        )
+
+    def test_dlq_is_encrypted_and_tls_only(self, template: Template) -> None:
+        template.has_resource_properties(
+            "AWS::SQS::Queue",
+            Match.object_like({"KmsMasterKeyId": Match.any_value()}),
+        )
+        policies = template.find_resources("AWS::SQS::QueuePolicy")
+        assert "aws:SecureTransport" in str(policies)
+
+    def test_stack_creates_hardened_criteria_bucket_by_default(
+        self, template: Template
+    ) -> None:
+        template.has_resource_properties(
+            "AWS::S3::Bucket",
+            Match.object_like(
+                {
+                    "PublicAccessBlockConfiguration": {
+                        "BlockPublicAcls": True,
+                        "BlockPublicPolicy": True,
+                        "IgnorePublicAcls": True,
+                        "RestrictPublicBuckets": True,
+                    },
+                    "VersioningConfiguration": {"Status": "Enabled"},
+                }
+            ),
+        )
+
+    def test_existing_bucket_arn_is_imported_not_created(self) -> None:
+        """Supplying an ARN must not create a second criteria bucket.
+
+        The jobs bucket is always stack-owned — it stages claim-check payloads
+        and is unrelated to where criteria files live — so this asserts on the
+        criteria bucket specifically rather than on the bucket count.
+        """
+        imported = _synth(
+            criteria_bucket_arn="arn:aws:s3:::existing-criteria-bucket"
+        )
+        logical_ids = set(imported.find_resources("AWS::S3::Bucket"))
+        assert not [
+            logical_id
+            for logical_id in logical_ids
+            if logical_id.startswith(("CriteriaBucket", "CriteriaAccessLogsBucket"))
+        ], "an existing bucket ARN must not create a criteria bucket"
+        assert "existing-criteria-bucket" in str(imported.to_json())
+
+    def test_jobs_bucket_expires_staged_payloads(self, template: Template) -> None:
+        """Staged payloads contain submitted material; they must not persist."""
+        buckets = template.find_resources("AWS::S3::Bucket")
+        jobs = [
+            resource
+            for logical_id, resource in buckets.items()
+            if logical_id.startswith("JobsBucket")
+        ]
+        assert jobs, "jobs bucket not found"
+        rules = jobs[0]["Properties"]["LifecycleConfiguration"]["Rules"]
+        assert any(rule.get("ExpirationInDays") for rule in rules), (
+            "jobs bucket has no expiration rule"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Step Functions workflow
+# ---------------------------------------------------------------------------
+
+
+class TestEvaluationWorkflow:
+    """The fan-out moved from an in-Lambda thread pool to a Map state."""
+
+    @staticmethod
+    def _definitions(template: Template) -> list[dict]:
+        machines = template.find_resources("AWS::StepFunctions::StateMachine")
+        assert machines, "no state machine synthesised"
+        return [m["Properties"] for m in machines.values()]
+
+    @staticmethod
+    def _definition(template: Template, machine_type: str) -> dict:
+        machines = template.find_resources("AWS::StepFunctions::StateMachine")
+        matching = [
+            m["Properties"]
+            for m in machines.values()
+            if m["Properties"].get("StateMachineType") == machine_type
+        ]
+        assert matching, f"no {machine_type} state machine synthesised"
+        return matching[0]
+
+    def test_both_workflows_are_deployed(self, template: Template) -> None:
+        """Express answers callers directly; Standard carries volume."""
+        types = {p["StateMachineType"] for p in self._definitions(template)}
+        assert types == {"EXPRESS", "STANDARD"}
+
+    def test_sync_workflow_fits_inside_the_express_ceiling(
+        self, template: Template
+    ) -> None:
+        """Express caps an execution at 5 minutes; the timeout must be under it."""
+        props = self._definition(template, "EXPRESS")
+        assert props["DefinitionString"]
+        assert 0 < _timeout_seconds(props) < 300
+
+    def test_async_workflow_uses_a_distributed_map(
+        self, template: Template
+    ) -> None:
+        """Inline Map caps at 40 iterations; the async path must not inherit that."""
+        definition = str(self._definition(template, "STANDARD")["DefinitionString"])
+        assert "DISTRIBUTED" in definition, (
+            "async workflow does not use a Distributed Map, so it cannot exceed "
+            "the inline Map concurrency limit"
+        )
+
+    def test_async_workflow_tolerates_no_criterion_failure(
+        self, template: Template
+    ) -> None:
+        """A criterion that could not be scored is not 'not assessable'.
+
+        ASL defaults both tolerated-failure settings to zero, so the CDK omits
+        them; this asserts nothing has raised them, which is the property that
+        matters.
+        """
+        definition = str(
+            self._definition(template, "STANDARD")["DefinitionString"]
+        ).replace(" ", "")
+        assert not re.search(r'"ToleratedFailureCount":[1-9]', definition)
+        assert not re.search(r'"ToleratedFailurePercentage":[1-9]', definition)
+
+    def test_tracing_enabled(self, template: Template) -> None:
+        for props in self._definitions(template):
+            assert props["TracingConfiguration"]["Enabled"] is True
+
+    def test_execution_data_not_logged(self, template: Template) -> None:
+        """State carries pointers and the response quoting submitted material."""
+        for props in self._definitions(template):
+            logging = props["LoggingConfiguration"]
+            assert logging["IncludeExecutionData"] is False
+            assert logging["Level"] == "ALL"
+
+    def test_map_concurrency_is_capped(self, template: Template) -> None:
+        """Concurrency is declared in the workflow, not left to the caller."""
+        for props in self._definitions(template):
+            definition = str(props["DefinitionString"]).replace(" ", "")
+            assert "MaxConcurrency" in definition, (
+                f"{props.get('StateMachineName')} does not cap Map concurrency"
+            )
+
+    def test_retries_use_backoff_and_full_jitter(self, template: Template) -> None:
+        """Retrying in the state machine keeps backoff off billed Lambda time."""
+        for props in self._definitions(template):
+            definition = str(props["DefinitionString"])
+            assert "ThrottlingException" in definition
+            assert "ModelTimeoutException" in definition
+            assert "BackoffRate" in definition
+            assert "FULL" in definition
+
+    def test_exactly_three_workflow_functions(self, template: Template) -> None:
+        """One Lambda per step. The single-Lambda path no longer exists."""
+        functions = template.find_resources("AWS::Lambda::Function")
+        ours = sorted(
+            logical_id
+            for logical_id in functions
+            if logical_id.startswith(
+                ("PrepareFunction", "EvaluateCriterion", "Summarize")
+            )
+        )
+        assert len(ours) == 3, f"expected 3 workflow functions, found {ours}"
+
+        assert not [
+            logical_id
+            for logical_id in functions
+            if logical_id.startswith("LlmJudgeFunction")
+        ], "the removed single-Lambda entry point is still being synthesised"
+
+    def test_prepare_function_cannot_invoke_bedrock(
+        self, template: Template
+    ) -> None:
+        """Least privilege per step: only model callers get Bedrock."""
+        statements = _role_statements(template, "PrepareFunctionServiceRole")
+        actions = _actions(statements)
+        assert not any(a.startswith("bedrock:") for a in actions), (
+            f"prepare step should not reach Bedrock, got {sorted(actions)}"
+        )
+
+    def test_criterion_worker_reaches_bedrock_and_the_idempotency_table(
+        self, template: Template
+    ) -> None:
+        """It is the only step that calls a model, so the only one that dedupes."""
+        actions = _actions(
+            _role_statements(template, "EvaluateCriterionFunctionServiceRole")
+        )
+        assert any(a.startswith("bedrock:") for a in actions), "worker needs Bedrock"
+        assert any(a.startswith("dynamodb:") for a in actions), (
+            "worker cannot reach the idempotency table, so repeats would pay "
+            f"for the model again. Granted: {sorted(actions)}"
+        )
+
+    def test_prepare_step_does_not_deduplicate(self, template: Template) -> None:
+        """Only the expensive step needs the table."""
+        actions = _actions(_role_statements(template, "PrepareFunctionServiceRole"))
+        assert not [a for a in actions if a.startswith("dynamodb:")], (
+            f"prepare step should not touch the idempotency table: {sorted(actions)}"
+        )
+
+    def test_criterion_worker_cannot_read_criteria_bucket(
+        self, template: Template
+    ) -> None:
+        """Criteria are resolved once, in the prepare step."""
+        statements = _role_statements(template, "EvaluateCriterionFunctionServiceRole")
+        sids = {s.get("Sid") for s in statements}
+        assert "S3GetCriteriaObject" not in sids

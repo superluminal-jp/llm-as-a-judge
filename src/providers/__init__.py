@@ -107,7 +107,7 @@ def _create(name: str, config: "Config") -> BaseProvider:
     Raises:
         ConfigurationError: If ``name`` does not map to a known provider.
     """
-    from src.handler import ConfigurationError
+    from src.errors import ConfigurationError
 
     if name == "anthropic":
         from src.providers.anthropic import AnthropicProvider

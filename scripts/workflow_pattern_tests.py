@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
-"""Run multiple Lambda invocation patterns against a deployed LlmJudgeStack.
+"""Run multiple invocation patterns against a deployed LlmJudgeStack.
+
+Exercises both workflows with the same cases. The synchronous (Express) and
+asynchronous (Standard) state machines share one definition, so running
+``TARGET=async`` after ``TARGET=sync`` is the end-to-end check that they stay in
+step and that the response is identical whichever way it was produced.
 
 Uses Bedrock with ``amazon.nova-lite-v1:0`` in each payload (on-demand model).
 
 Environment:
-    AWS_REGION          Override region (default: config/parameters.json ``aws_region``).
-    LAMBDA_FUNCTION_NAME  Skip CloudFormation lookup when set.
+    AWS_REGION            Override region (default: config/parameters.json ``aws_region``).
+    ENVIRONMENT           Environment suffix used to build the stack name
+                          (default: config/parameters.json ``environment``).
+    STACK_NAME            Skip the ``LlmJudgeStack-<environment>`` convention.
+    TARGET                ``sync`` (default) or ``async``.
+    STATE_MACHINE_ARN     Skip the CloudFormation output lookup.
+    ASYNC_POLL_TIMEOUT    Seconds to wait for an async execution (default 600).
 
 Usage (from repo root)::
 
-    python3 scripts/lambda_pattern_tests.py
+    python3 scripts/workflow_pattern_tests.py
+    TARGET=async python3 scripts/workflow_pattern_tests.py
 """
 
 from __future__ import annotations
@@ -18,6 +29,7 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -39,45 +51,125 @@ def _bucket_from_arn(arn: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _resolve_function_name(region: str) -> str:
-    if name := os.environ.get("LAMBDA_FUNCTION_NAME", "").strip():
-        return name
+def _stack_outputs(region: str, environment: str) -> dict[str, str]:
+    """Return the deployed stack's outputs keyed by OutputKey."""
     import boto3
 
     cf = boto3.client("cloudformation", region_name=region)
-    stacks = cf.describe_stacks(StackName="LlmJudgeStack")
-    outs = stacks["Stacks"][0].get("Outputs") or []
-    for o in outs:
-        if o.get("OutputKey") == "LambdaFunctionName":
-            return str(o["OutputValue"])
-    raise RuntimeError("LambdaFunctionName output missing on LlmJudgeStack")
+    stack_name = os.environ.get("STACK_NAME", f"LlmJudgeStack-{environment}")
+    stacks = cf.describe_stacks(StackName=stack_name)
+    outputs = stacks["Stacks"][0].get("Outputs") or []
+    return {str(o["OutputKey"]): str(o["OutputValue"]) for o in outputs}
 
 
-def _invoke(
+def _failure(raw: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """Normalise a failed execution into the ``(body, error)`` shape used below."""
+    error = str(raw.get("error", "ExecutionFailed"))
+    return (
+        {"errorType": error, "errorMessage": str(raw.get("cause", ""))[:2000]},
+        error,
+    )
+
+
+def _invoke_sync(
     client: Any,
-    name: str,
+    state_machine_arn: str,
     payload: dict[str, Any],
 ) -> tuple[dict[str, Any], str | None]:
-    raw = client.invoke(
-        FunctionName=name,
-        InvocationType="RequestResponse",
-        Payload=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+    """Run the Express workflow and return its output directly."""
+    raw = client.start_sync_execution(
+        stateMachineArn=state_machine_arn,
+        input=json.dumps(payload, ensure_ascii=False),
     )
-    err = raw.get("FunctionError")
-    body = json.loads(raw["Payload"].read().decode("utf-8"))
-    return body, err
+    if raw.get("status") != "SUCCEEDED":
+        return _failure(raw)
+    return json.loads(raw["output"]), None
+
+
+def _invoke_async(
+    client: Any,
+    state_machine_arn: str,
+    payload: dict[str, Any],
+    poll_timeout: int,
+) -> tuple[dict[str, Any], str | None]:
+    """Start the Standard workflow and poll until it settles.
+
+    Polling exists only so that this script can assert on a result; real callers
+    of the asynchronous workflow collect it from the jobs bucket instead.
+    """
+    started = client.start_execution(
+        stateMachineArn=state_machine_arn,
+        input=json.dumps(payload, ensure_ascii=False),
+    )
+    execution_arn = started["executionArn"]
+
+    deadline = time.monotonic() + poll_timeout
+    while True:
+        described = client.describe_execution(executionArn=execution_arn)
+        status = described["status"]
+        if status != "RUNNING":
+            break
+        if time.monotonic() > deadline:
+            return (
+                {
+                    "errorType": "PollTimeout",
+                    "errorMessage": (
+                        f"execution still RUNNING after {poll_timeout}s: "
+                        f"{execution_arn}"
+                    ),
+                },
+                "PollTimeout",
+            )
+        time.sleep(2)
+
+    if status != "SUCCEEDED":
+        return _failure(described)
+    return json.loads(described["output"]), None
 
 
 def main() -> int:
     params = _load_parameters()
     region = os.environ.get("AWS_REGION", params.get("aws_region", "ap-northeast-1"))
-    bucket_arn = str(params.get("criteria_bucket_arn", "") or "")
-    bucket = _bucket_from_arn(bucket_arn)
+    environment = os.environ.get(
+        "ENVIRONMENT", str(params.get("environment", "dev") or "dev")
+    )
+    target = os.environ.get("TARGET", "sync").strip().lower()
+    if target not in ("sync", "async"):
+        print(f"TARGET must be 'sync' or 'async', got {target!r}", file=sys.stderr)
+        return 2
 
     import boto3
 
-    lambda_client = boto3.client("lambda", region_name=region)
-    fn = _resolve_function_name(region)
+    outputs = _stack_outputs(region, environment)
+
+    # The criteria bucket is now created by the stack, so prefer its output over
+    # config/parameters.json (which no longer carries a real ARN).
+    bucket = outputs.get("CriteriaBucketName") or _bucket_from_arn(
+        str(params.get("criteria_bucket_arn", "") or "")
+    )
+
+    output_key = "SyncStateMachineArn" if target == "sync" else "AsyncStateMachineArn"
+    state_machine_arn = os.environ.get("STATE_MACHINE_ARN") or outputs.get(
+        output_key, ""
+    )
+    if not state_machine_arn:
+        print(f"{output_key} output missing on the stack", file=sys.stderr)
+        return 2
+
+    sfn_client = boto3.client("stepfunctions", region_name=region)
+    target_label = state_machine_arn.rsplit(":", 1)[-1]
+    poll_timeout = int(os.environ.get("ASYNC_POLL_TIMEOUT", "600"))
+
+    if target == "sync":
+
+        def run(payload: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+            return _invoke_sync(sfn_client, state_machine_arn, payload)
+    else:
+
+        def run(payload: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+            return _invoke_async(
+                sfn_client, state_machine_arn, payload, poll_timeout
+            )
 
     base_paired = {
         "prompt": "要約してください: 水はH2Oです。",
@@ -237,10 +329,10 @@ def main() -> int:
 
     passed = 0
     failed = 0
-    print(f"Region={region} Function={fn}\n")
+    print(f"Region={region} Target={target} ({target_label})\n")
 
     for case_id, payload, expect_ok, note in cases:
-        body, fn_err = _invoke(lambda_client, fn, payload)
+        body, fn_err = run(payload)
         ok = fn_err is None and "errorMessage" not in body
         if expect_ok:
             success = ok

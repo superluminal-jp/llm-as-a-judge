@@ -8,11 +8,20 @@
 
 | モジュール | 概要 |
 |-----------|------|
-| `handler.py` | Lambda エントリ、入力検証、例外型、評価の呼び出し |
-| `evaluator.py` | クライテリアごとのプロンプト、並列 LLM 呼び出し、パース、総評 |
+| `errors.py` | 例外階層。全モジュールが共有する単一の定義元 |
+| `validation.py` | イベント検証、モデル解決。ワークフローの最初のステップで 1 回だけ走る |
+| `evaluator.py` | クライテリアごとのプロンプト、1 件評価、パース、結果集約。**オーケストレーションは持たない** |
 | `criteria.py` | データモデル、`load_from_s3`、デフォルトクライテリア |
-| `config.py` | 環境変数からの設定（コールドスタートでキャッシュ） |
+| `config.py` | 環境変数と Secrets Manager からの設定（コールドスタートでキャッシュ） |
+| `jobs.py` | クレームチェック（payload と結果の S3 退避）、content hash、結果の並列回収 |
+| `idempotency.py` | Powertools Idempotency の配線とキー生成。`IDEMPOTENCY_TABLE` 未設定時は素通し |
+| `observability.py` | Powertools `Tracer` / `Metrics` の共有インスタンスとメトリクス名 |
+| `handlers/` | Step Functions の各ステップ（`prepare` / `evaluate_criterion` / `summarize`）|
 | `providers/` | Anthropic / OpenAI / Bedrock の同期クライアント |
+
+`handlers/` の 3 ステップはプロンプト構築・パース・集約を自前で持たず、
+すべて `evaluator.py` の関数を再利用する。ステップを分けているのは
+権限分離と失敗箇所の特定のためであって、ロジックを分けるためではない。
 
 ---
 
@@ -22,10 +31,14 @@
 
 | ファイル | 主な対象 |
 |----------|-----------|
-| `test_handler.py` | `lambda_handler`、イベント検証、例外マッピング |
+| `test_validation.py` | イベント検証、モデル解決、例外マッピング |
 | `test_evaluator.py` | プロンプト生成、パース、並列評価まわり |
 | `test_criteria.py` | `load_from_dict` / `load_from_s3`（moto）、S3 URI パース |
-| `test_providers.py` | 各プロバイダーのモックを使った呼び出しとエラー処理 |
+| `test_providers.py` | 各プロバイダーのモックを使った呼び出し、botocore クライアント設定、エラー処理 |
+| `test_config.py` | 環境変数と Secrets Manager からの API キー解決 |
+| `test_observability.py` | メトリクス計装（計装の失敗が評価を落とさないこと含む） |
+| `test_workflow_handlers.py` | ワークフロー各ステップ、クレームチェック、2 経路の出力一致 |
+| `test_cdk_stack.py` | 合成した CloudFormation への IaC アサーションと cdk-nag 検査（Docker 不要） |
 | `conftest.py` | 共有フィクスチャ（あれば） |
 
 実行例は [development.md](development.md) を参照。
@@ -34,48 +47,69 @@
 
 ## `scripts/` — `deploy.sh`
 
-CDK 依存のインストール、`cdk bootstrap`（ベストエフォート）、`LlmJudgeStack` への `cdk deploy` を順に実行する。
+CDK 依存のインストールと `LlmJudgeStack-<env>` への `cdk deploy` を実行する。
+`cdk bootstrap` は **`--bootstrap` を明示したときだけ**走る（アカウント・リージョン単位で
+広い権限のロールを作る一度きりの操作のため）。
 
 | オプション / 変数 | 説明 |
 |-------------------|------|
-| `--env dev\|prod` | ログ表示用ラベル（既定 `dev`） |
+| `--env dev\|prod` | 環境名。**スタック名 `LlmJudgeStack-<env>`** とリソース名を決める（既定 `dev`） |
 | `--region REGION` | デプロイ先リージョン（`AWS_REGION` より後に評価される） |
+| `--bootstrap` | `cdk bootstrap` を実行する。初回のみ |
 | `AWS_REGION` | 未設定時は `config/parameters.json` と `parameters.local.json` をマージした結果の `aws_region`、なければ `ap-northeast-1` |
-| `CRITERIA_BUCKET_ARN` | 設定時、`--context criteria_bucket_arn=...` として CDK に渡す |
+| `CRITERIA_BUCKET_ARN` | 設定時、`--context criteria_bucket_arn=...` として CDK に渡す。未設定ならスタックがバケットを作成する |
+| `CDK_BOOTSTRAP_POLICIES` | bootstrap 時の CloudFormation 実行ロールに付けるマネージドポリシー ARN（カンマ区切り）。既定はこのスタックが作るサービスに絞った集合で、`AdministratorAccess` ではない |
 
 詳細はスクリプト先頭のコメントと [README.md](../README.md) の「デプロイ」節。
 
 ---
 
-## `cdk/` — `LlmJudgeStack`
+## `cdk/` — `LlmJudgeStack-<env>`
 
-Python CDK v2 で 1 つの Lambda 関数と IAM を定義する。エントリは [`cdk/app.py`](../cdk/app.py)（`python3 cdk/app.py`）。
+Python CDK v2 で Lambda 4 関数、Step Functions ワークフロー、および付随する
+IAM / KMS / S3 / SQS / CloudWatch リソースを定義する。エントリは
+[`cdk/app.py`](../cdk/app.py)（`python3 cdk/app.py`）。リソース一覧は
+[README.md](../README.md) の「CDK スタックリソース」節。
 
 ### 前提
 
-- **Docker** が必要（アセットバンドル時に公式 Python 3.12 イメージ上で `pip install` と `src/` のコピーを実行）。
+- **Docker** が必要（アセットバンドル時に公式 Python 3.13 イメージ上で `pip install` と `src/` のコピーを実行）。
+  ただし `pytest tests/test_cdk_stack.py` はバンドルを省略して合成するため Docker なしで通る。
 - AWS 認証情報が設定済みであること。
+- `cdk synth` は cdk-nag の AWS Solutions ルールパックを通る。未抑制の指摘があれば失敗する。
 
-### 設定の優先順位（`default_provider` / `criteria_bucket_arn`）
+### 設定の優先順位
 
 1. CDK の **コンテキスト**で非空の値があればそれを採用（`cdk deploy --context key=value` や [`cdk.json`](../cdk.json) の `context`）。
-2. なければ [`config/parameters.json`](../config/parameters.json)（`cdk/app.py` が読み込み、スタックに渡す）。
-3. `default_provider` の最終フォールバックは **`bedrock`**。`criteria_bucket_arn` が空なら S3 用 IAM を付けない。
+   対象は `environment` / `aws_region` / `default_provider` / `bedrock_model` / `criteria_bucket_arn`。
+2. なければ [`config/parameters.local.json`](../config/README.md)（gitignore 済み）。
+3. なければ [`config/parameters.json`](../config/parameters.json)。
+4. 最終フォールバックはコード上の既定（`default_provider` → `bedrock`、`environment` → `dev` など）。
+
+リスト型のキー（`bedrock_allowed_models` / `bedrock_inference_profile_regions`）は
+パラメータファイルでのみ指定する。
 
 ### よく使うコマンド
 
 ```bash
 pip install -r cdk/requirements.txt   # リポジトリルートから
-cdk synth --app "python3 cdk/app.py"
-cdk deploy LlmJudgeStack --app "python3 cdk/app.py" --require-approval never
+export CDK_DEFAULT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+cdk synth --app "python3 cdk/app.py" --context environment=dev
+cdk deploy LlmJudgeStack-dev --app "python3 cdk/app.py" --require-approval never --context environment=dev
 ```
 
 リージョンは `AWS_REGION` または `config/parameters.json` の `aws_region`（`scripts/deploy.sh` 利用時）。
 
 ### スタックの出力
 
-- `LambdaFunctionArn` — 関数 ARN（エクスポート名 `LlmJudgeFunctionArn`）
-- `LambdaFunctionName` — 関数名
+- `SyncStateMachineArn` — 同期実行用（Express、`start-sync-execution`）
+- `AsyncStateMachineArn` — 非同期実行用（Standard、`start-execution`）
+- `CriteriaBucketName` — クライテリア JSON 置き場
+- `JobsBucketName` — payload・per-criterion 結果・最終結果の置き場
+- `IdempotencyTableName` — ジャッジ呼び出しの重複排除テーブル
+- `ApiKeysSecretName` — Anthropic / OpenAI の API キーを入れるシークレット
+- `DeadLetterQueueUrl` — 非同期呼び出し失敗の退避先
+- `AlarmTopicArn` — アラーム通知先 SNS トピック
 
 実装の詳細は [`cdk/stack.py`](../cdk/stack.py) の docstring を参照。
 

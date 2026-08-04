@@ -18,7 +18,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 
 ```bash
 pytest                                    # 全件
-pytest tests/test_handler.py -v          # ハンドラのみ
+pytest tests/test_validation.py -v      # イベント検証のみ
 pytest --cov=src --cov-report=term-missing # カバレッジ
 ```
 

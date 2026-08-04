@@ -37,11 +37,15 @@ class AnthropicProvider:
             config: Application configuration containing the API key and
                     request timeout.
         """
+        from src.config import get_api_key
+
         # Cold-start: Anthropic client initialized once per container.
         # The SDK maintains an internal HTTP connection pool that is reused
         # across Lambda invocations within the same container.
+        # The key comes from the environment when set, otherwise from the
+        # Secrets Manager secret named by API_KEYS_SECRET_NAME.
         self._client = anthropic.Anthropic(
-            api_key=config.anthropic_api_key,
+            api_key=get_api_key(config, "anthropic"),
             max_retries=3,
         )
         logger.debug("AnthropicProvider initialised")
@@ -67,7 +71,7 @@ class AnthropicProvider:
             ProviderError: If the API call fails due to authentication issues,
                 rate limiting, or any other API error.
         """
-        from src.handler import ProviderError
+        from src.errors import ProviderError
 
         start = time.perf_counter()
         try:
